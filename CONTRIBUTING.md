@@ -1,4 +1,4 @@
-# Contributing to The Cinder Project website
+# Contributing to CPAC
 
 Thank you for your interest in our repository/codebase.
 

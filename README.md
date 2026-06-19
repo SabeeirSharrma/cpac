@@ -4,25 +4,6 @@ Community Package Analysis Client: a package trust layer for Arch-based Linux di
 
 CPAC is an advisor, not a package manager replacement. It helps answer whether a package looks trustworthy before you install it.
 
-## Week 1 Scope
-
-Implemented commands:
-
-```bash
-cpac search <query>
-cpac trust <package>
-cpac audit [package]
-```
-
-Stubbed commands:
-
-```bash
-cpac install <package>
-cpac remove <package>
-cpac update
-cpac aur <enable|disable>
-```
-
 ## Build
 
 ```bash
