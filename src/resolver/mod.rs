@@ -8,7 +8,7 @@ use crate::backends::{self, PackageInfo, PackageSource};
 /// Search official repositories and AUR, ranked by relevance then source.
 pub fn search(cache: &Cache, query: &str) -> Result<Vec<PackageInfo>> {
     let cache_key = format!("search:{query}");
-    if let Some(cached) = cache.get_packages(&cache_key) {
+    if let Some(cached) = cache.get_packages(&cache_key)? {
         if let Ok(pkgs) = serde_json::from_slice::<Vec<PackageInfo>>(&cached) {
             return Ok(pkgs);
         }
@@ -49,19 +49,23 @@ pub fn search(cache: &Cache, query: &str) -> Result<Vec<PackageInfo>> {
 /// Resolve one package, using official repositories before falling back to AUR.
 pub fn resolve(cache: &Cache, package: &str) -> Result<Option<PackageInfo>> {
     let cache_key = format!("info:{package}");
-    if let Some(cached) = cache.get_packages(&cache_key) {
+    if let Some(cached) = cache.get_packages(&cache_key)? {
         if let Ok(pkg) = serde_json::from_slice::<PackageInfo>(&cached) {
             return Ok(Some(pkg));
         }
     }
 
     if let Some(pkg) = backends::pacman::info(package)? {
-        let _ = cache.insert_packages(&cache_key, serde_json::to_vec(&pkg)?);
+        if let Ok(serialized) = serde_json::to_vec(&pkg) {
+            let _ = cache.insert_packages(&cache_key, serialized);
+        }
         return Ok(Some(pkg));
     }
 
     if let Some(pkg) = backends::aur::info(package)? {
-        let _ = cache.insert_packages(&cache_key, serde_json::to_vec(&pkg)?);
+        if let Ok(serialized) = serde_json::to_vec(&pkg) {
+            let _ = cache.insert_packages(&cache_key, serialized);
+        }
         return Ok(Some(pkg));
     }
 

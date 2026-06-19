@@ -6,12 +6,13 @@ use std::path::{Path, PathBuf};
 
 /// Initialize the cache directory and open sled databases.
 pub fn init(cache_dir: Option<&Path>) -> Result<Cache> {
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| anyhow::anyhow!("Could not get home directory"))?;
+    
     let dir = if let Some(dir) = cache_dir {
         dir.to_path_buf()
     } else {
-        dirs::home_dir()
-            .expect("could not get home dir")
-            .join(".cpac/cache")
+        home_dir.join(".cpac/cache")
     };
     std::fs::create_dir_all(&dir)?;
 
@@ -40,52 +41,44 @@ pub struct Cache {
 
 impl Cache {
     /// Simple getter/setter wrappers for demonstration.
-    pub fn get_packages<K: AsRef<[u8]>>(&self, key: K) -> Option<Vec<u8>> {
-        self
+    pub fn get_packages<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
+        Ok(self
             .packages
-            .get(key)
-            .ok()
-            .flatten()
-            .map(|ivec| ivec.to_vec())
+            .get(key)?
+            .map(|ivec| ivec.to_vec()))
     }
     pub fn insert_packages<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> Result<()> {
         let ivec = IVec::from(value.as_ref());
         self.packages.insert(key, ivec)?;
         Ok(())
     }
-    pub fn get_trust<K: AsRef<[u8]>>(&self, key: K) -> Option<Vec<u8>> {
-        self
+    pub fn get_trust<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
+        Ok(self
             .trust
-            .get(key)
-            .ok()
-            .flatten()
-            .map(|ivec| ivec.to_vec())
+            .get(key)?
+            .map(|ivec| ivec.to_vec()))
     }
     pub fn insert_trust<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> Result<()> {
         let ivec = IVec::from(value.as_ref());
         self.trust.insert(key, ivec)?;
         Ok(())
     }
-    pub fn get_advisories<K: AsRef<[u8]>>(&self, key: K) -> Option<Vec<u8>> {
-        self
+    pub fn get_advisories<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
+        Ok(self
             .advisories
-            .get(key)
-            .ok()
-            .flatten()
-            .map(|ivec| ivec.to_vec())
+            .get(key)?
+            .map(|ivec| ivec.to_vec()))
     }
     pub fn insert_advisories<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> Result<()> {
         let ivec = IVec::from(value.as_ref());
         self.advisories.insert(key, ivec)?;
         Ok(())
     }
-    pub fn get_pkgbuilds<K: AsRef<[u8]>>(&self, key: K) -> Option<Vec<u8>> {
-        self
+    pub fn get_pkgbuilds<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
+        Ok(self
             .pkgbuilds
-            .get(key)
-            .ok()
-            .flatten()
-            .map(|ivec| ivec.to_vec())
+            .get(key)?
+            .map(|ivec| ivec.to_vec()))
     }
     pub fn insert_pkgbuilds<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> Result<()> {
         let ivec = IVec::from(value.as_ref());
@@ -97,10 +90,9 @@ impl Cache {
 /// Remove the entire cache directory.
 pub fn clear_cache() -> Result<()> {
     let cache_dir = dirs::home_dir()
-        .expect("could not get home dir")
+        .ok_or_else(|| anyhow::anyhow!("Could not get home directory"))?
         .join(".cpac/cache");
-    if cache_dir.exists() {
-        fs::remove_dir_all(cache_dir)?;
-    }
+    // Remove directory and ignore "not found" errors (race condition safe)
+    let _ = fs::remove_dir_all(&cache_dir);
     Ok(())
 }

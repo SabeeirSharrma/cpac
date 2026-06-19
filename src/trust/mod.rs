@@ -45,8 +45,8 @@ pub struct TrustReport {
 
 /// Compute a trust report for a package, using the cache if available.
 pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
-    let cache_key = format!("trust:{}", pkg.name);
-    if let Some(cached) = cache.get_trust(&cache_key) {
+    let cache_key = format!("trust:{}-{}", pkg.name, pkg.version);
+    if let Ok(Some(cached)) = cache.get_trust(&cache_key) {
         if let Ok(report) = serde_json::from_slice::<TrustReport>(&cached) {
             return report;
         }

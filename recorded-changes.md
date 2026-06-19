@@ -11,9 +11,9 @@ Version 0.3 introduces a local metadata cache to speed up package searches and t
   - `trust.db` – trust scores and audit history
   - `advisories.db` – known security advisories (placeholder for future use)
   - `pkgbuilds.db` – locally installed PKGBUILD snapshots (placeholder for future use)
-- On each `cpac search` or `cpac trust`, CPAC first checks the cache; if data is recent, it is returned instantly without network requests.
-- The cache is automatically kept up‑to‑date by background updates or explicit `cpac update` (still to be implemented).
-- This makes common operations faster and enables basic offline functionality.
+- On each `cpac search` or `cpac trust`, CPAC first checks the cache; if a cached entry exists for the key, it is returned instantly without network requests. There is no TTL or freshness validation — cached data is reused unconditionally until explicitly cleared.
+- Cache invalidation and update mechanisms (e.g., TTL, background refresh, `cpac update`) are not yet implemented.
+- This makes repeated operations faster and enables basic offline functionality for previously cached queries.
 
 ### Clear Cache Command
 - New subcommand: `cpac clear-cache`
