@@ -25,7 +25,7 @@ const TAGLINE: &str = "A package trust layer for Arch-based Linux";
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -92,7 +92,12 @@ enum AurAction {
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
-    match cli.command {
+    let Some(command) = cli.command else {
+        Cli::parse_from(["cpac", "--help"]);
+        return Ok(());
+    };
+
+    match command {
         Commands::Search { query, all } => {
             let results = resolver::search(&query)?;
             display::print_search_results(&results, all);
