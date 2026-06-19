@@ -1,6 +1,6 @@
 # Contributing to CPAC
 
-Thank you for your interest in our repository/codebase.
+Thank you for your interest in CPAC.
 
 ## Contribution Policy
 
@@ -10,17 +10,19 @@ This repository is maintained strictly by the core developers/maintainers. Any c
 
 ### Why this policy?
 
-As an organization dedicated to making a safer internet, we maintain strict control over our codebase to ensure security, stability, and adherence to our core principles.
+CPAC is a security-focused tool — its trust engine, resolver, and sanitization pipeline are the parts of the codebase that users rely on to make safe install decisions. An unreviewed external change to those areas isn't just a process risk, it's a real attack surface. Until CPAC's contribution review process is more established, we're keeping the codebase strictly maintainer-controlled to protect that trust.
 
 ### How to get involved
 
-If you are interested in contributing, you must first reach out to the project maintainers:
+If you're interested in contributing code, reach out to the project maintainers first — contact options are listed on our GitHub Pages site:
 
-- **Owner/Main Developer:** [Sabeeir Sharrma](https://github.com/sabeeirsharrma)
-- **Maintainer/Assistant Developer:** [trigered02](https://github.com/trigered02)
+- **Owner / Maintainer / Main Developer:** [Sabeeir Sharrma](https://github.com/sabeeirsharrma)
 
-Only after being officially invited as a collaborator or joining our organization or receiving explicit permission from the core team may you begin submitting changes.
+Only after being officially invited as a collaborator, joining our organization, or receiving explicit permission from the core team may you begin submitting changes.
 
-Alternatively, you can suggest improvements by creating a new issue or reporting it to us on our [Discord Server](https://discord.com/invite/3ZMtEgJjFT)
+### Bug reports and suggestions
 
-Thank you for understanding and respecting our development process.
+You don't need prior permission for this part — bug reports, feature suggestions, and general feedback are welcome through either:
+
+- Opening a new [issue](https://github.com/sabeeirsharrma/cpac/issues) on this repository
+- Our [Discord server](https://discord.com/invite/3ZMtEgJjFT)
