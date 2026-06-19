@@ -1,3 +1,9 @@
+# Rust build artifacts
+/target/
+debug/
+*.pdb
+
+# Archives and binaries
 *.tar
 *.tar.*
 *.jar
@@ -6,9 +12,22 @@
 *.deb
 *.zip
 *.tgz
-*.log
-*.log.*
 *.sig
 
+# Logs
+*.log
+*.log.*
+
+# Packaging
 pkg/
-src/
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
