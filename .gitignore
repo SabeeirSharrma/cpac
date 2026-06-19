@@ -31,3 +31,5 @@ pkg/
 # OS
 .DS_Store
 Thumbs.db
+
+CPAC_SPEC.md
