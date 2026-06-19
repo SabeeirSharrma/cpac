@@ -109,3 +109,8 @@ The Week 1 trust algorithm uses metadata available from official repositories an
 - out-of-date and orphan status
 
 See [docs/trust-algorithm.md](docs/trust-algorithm.md) for details.
+
+## Made By
+
+**Developer/Maintainer: [Sabeeir Sharrma](https://github.com/SabeeirSharrma)**
+**Made under [The Cinder Project - Making a safer internet](https://thecinderproject.qd.je/)

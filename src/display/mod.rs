@@ -1,4 +1,5 @@
 use colored::{ColoredString, Colorize};
+use std::collections::BTreeSet;
 
 use crate::{
     audit::SystemAudit,
@@ -167,6 +168,27 @@ pub fn print_system_audit(audit: &SystemAudit) {
     );
     println!("  {} {}", "Unknown:".cyan().bold(), audit.counts.unknown);
 
+    if !audit.official_notices.is_empty() {
+        let repos = audit
+            .official_notices
+            .iter()
+            .map(|notice| official_repo_label(&notice.repo).to_string())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!();
+        println!(
+            "  {} {}",
+            "Official packages:".cyan().bold(),
+            format!(
+                "{} package(s) from official repositories ({}) are excluded from warnings",
+                audit.official_notices.len(),
+                repos
+            )
+        );
+    }
+
     println!();
     println!("  {}", "Warnings".cyan().bold());
 
@@ -182,7 +204,7 @@ pub fn print_system_audit(audit: &SystemAudit) {
             warning.package_name.as_str().bold(),
             format!(
                 "Trust: {} - {}",
-                warning_score_label(warning.score, &warning.tier),
+                colored_warning_label(warning.score, &warning.tier),
                 warning.reason
             )
         );
@@ -232,11 +254,21 @@ fn colored_score(score: u32) -> ColoredString {
     }
 }
 
-fn warning_score_label(score: u32, tier: &crate::trust::TrustTier) -> String {
+fn colored_warning_label(score: u32, tier: &crate::trust::TrustTier) -> ColoredString {
     if matches!(tier, crate::trust::TrustTier::Unknown) {
-        "Unknown".to_string()
+        "Unknown".dimmed()
     } else {
-        format!("{}/100", score)
+        colored_score(score)
+    }
+}
+
+fn official_repo_label(repo: &str) -> ColoredString {
+    if repo == "endeavouros" {
+        "EndeavourOS".green()
+    } else if repo.starts_with("cachyos") {
+        "CachyOS".green()
+    } else {
+        repo.green()
     }
 }
 

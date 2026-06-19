@@ -32,8 +32,15 @@ pub struct AuditWarning {
 }
 
 #[derive(Debug, Clone)]
+pub struct OfficialPackageNotice {
+    pub package_name: String,
+    pub repo: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct SystemAudit {
     pub counts: AuditCounts,
+    pub official_notices: Vec<OfficialPackageNotice>,
     pub warnings: Vec<AuditWarning>,
 }
 
@@ -58,12 +65,22 @@ pub fn audit_system() -> Result<SystemAudit> {
     }
 
     let mut counts = AuditCounts::default();
+    let mut official_notices = Vec::new();
     let mut warnings = Vec::new();
 
     for pkg in packages {
         let pkg = hydrate_package(pkg, &repo_map, &aur_map);
         let report = trust::analyze(&pkg);
         increment_counts(&mut counts, &report.tier);
+
+        if let PackageSource::Official { repo } = &pkg.source {
+            if is_distro_specific_repo(repo) {
+                official_notices.push(OfficialPackageNotice {
+                    package_name: report.package_name.clone(),
+                    repo: repo.clone(),
+                });
+            }
+        }
 
         if report.score < 60 || matches!(report.tier, TrustTier::Unknown) {
             warnings.push(AuditWarning {
@@ -80,8 +97,17 @@ pub fn audit_system() -> Result<SystemAudit> {
             .cmp(&b.score)
             .then_with(|| a.package_name.cmp(&b.package_name))
     });
+    official_notices.sort_by(|a, b| {
+        a.repo
+            .cmp(&b.repo)
+            .then_with(|| a.package_name.cmp(&b.package_name))
+    });
 
-    Ok(SystemAudit { counts, warnings })
+    Ok(SystemAudit {
+        counts,
+        official_notices,
+        warnings,
+    })
 }
 
 /// Audit a single installed package.
@@ -185,6 +211,10 @@ fn is_official_repo(repo: &str) -> bool {
     ) || repo.starts_with("cachyos")
 }
 
+fn is_distro_specific_repo(repo: &str) -> bool {
+    repo == "endeavouros" || repo.starts_with("cachyos")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,5 +279,14 @@ mod tests {
     fn third_party_repos_are_not_misclassified() {
         assert!(!is_official_repo("chaotic-aur"));
         assert!(!is_official_repo("blackarch"));
+    }
+
+    #[test]
+    fn distro_specific_repos_are_reported_for_exclusion_notes() {
+        assert!(is_distro_specific_repo("endeavouros"));
+        assert!(is_distro_specific_repo("cachyos"));
+        assert!(is_distro_specific_repo("cachyos-v3"));
+        assert!(!is_distro_specific_repo("core"));
+        assert!(!is_distro_specific_repo("extra"));
     }
 }
