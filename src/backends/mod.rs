@@ -2,10 +2,11 @@ pub mod aur;
 pub mod pacman;
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// The source repository a package comes from.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub enum PackageSource {
     Official { repo: String },
@@ -26,7 +27,7 @@ impl fmt::Display for PackageSource {
 }
 
 /// Unified package information from any backend.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageInfo {
     pub name: String,
     pub version: String,

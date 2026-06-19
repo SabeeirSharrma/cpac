@@ -1,9 +1,11 @@
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 
 use crate::backends::{PackageInfo, PackageSource};
+use crate::cache::Cache;
 
 /// Trust tier classification.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrustTier {
     Official,
     ThirdParty,
@@ -23,7 +25,7 @@ impl std::fmt::Display for TrustTier {
 }
 
 /// A single signal contributing to the trust score.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrustSignal {
     pub name: String,
     pub points: i32,
@@ -32,7 +34,7 @@ pub struct TrustSignal {
 }
 
 /// Full trust analysis report for a package.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrustReport {
     pub package_name: String,
     pub tier: TrustTier,
@@ -41,8 +43,15 @@ pub struct TrustReport {
     pub recommendation: String,
 }
 
-/// Compute a trust report for a package.
-pub fn analyze(pkg: &PackageInfo) -> TrustReport {
+/// Compute a trust report for a package, using the cache if available.
+pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
+    let cache_key = format!("trust:{}", pkg.name);
+    if let Some(cached) = cache.get_trust(&cache_key) {
+        if let Ok(report) = serde_json::from_slice::<TrustReport>(&cached) {
+            return report;
+        }
+    }
+
     let tier = match &pkg.source {
         PackageSource::Official { .. } => TrustTier::Official,
         PackageSource::Aur => TrustTier::Community,
@@ -243,13 +252,20 @@ pub fn analyze(pkg: &PackageInfo) -> TrustReport {
 
     let recommendation = recommendation(score).to_string();
 
-    TrustReport {
+    let report = TrustReport {
         package_name: pkg.name.clone(),
         tier,
         score,
         signals,
         recommendation,
+    };
+
+    // Cache the report
+    if let Ok(serialized) = serde_json::to_vec(&report) {
+        let _ = cache.insert_trust(&cache_key, serialized);
     }
+
+    report
 }
 
 /// Map a trust score to a recommendation label.

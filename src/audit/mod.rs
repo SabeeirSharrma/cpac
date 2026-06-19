@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use crate::cache::Cache;
 
 use crate::{
     backends::{aur, pacman, PackageInfo, PackageSource},
@@ -45,7 +46,7 @@ pub struct SystemAudit {
 }
 
 /// Audit all installed packages on the system.
-pub fn audit_system() -> Result<SystemAudit> {
+pub fn audit_system(cache: &Cache) -> Result<SystemAudit> {
     let packages = pacman::installed()?;
     let repo_map = pacman::repo_map()?;
     let foreign_names: Vec<String> = packages
@@ -70,7 +71,7 @@ pub fn audit_system() -> Result<SystemAudit> {
 
     for pkg in packages {
         let pkg = hydrate_package(pkg, &repo_map, &aur_map);
-        let report = trust::analyze(&pkg);
+        let report = trust::analyze(cache, &pkg);
         increment_counts(&mut counts, &report.tier);
 
         if let PackageSource::Official { repo } = &pkg.source {
@@ -111,7 +112,7 @@ pub fn audit_system() -> Result<SystemAudit> {
 }
 
 /// Audit a single installed package.
-pub fn audit_package(name: &str) -> Result<Option<(PackageInfo, TrustReport)>> {
+pub fn audit_package(cache: &Cache, name: &str) -> Result<Option<(PackageInfo, TrustReport)>> {
     let packages = pacman::installed()?;
     let repo_map = pacman::repo_map()?;
     let Some(pkg) = packages.into_iter().find(|pkg| pkg.name == name) else {
@@ -126,7 +127,7 @@ pub fn audit_package(name: &str) -> Result<Option<(PackageInfo, TrustReport)>> {
     }
 
     let pkg = hydrate_package(pkg, &repo_map, &aur_map);
-    let report = trust::analyze(&pkg);
+    let report = trust::analyze(cache, &pkg);
 
     Ok(Some((pkg, report)))
 }

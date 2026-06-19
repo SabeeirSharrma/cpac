@@ -1,5 +1,6 @@
 mod audit;
 mod backends;
+mod cache;
 mod cli;
 mod display;
 mod resolver;

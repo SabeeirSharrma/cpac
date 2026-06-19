@@ -1,10 +1,15 @@
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
+use once_cell::sync::Lazy;
 use std::io::{self, IsTerminal, Write};
 
-use crate::{audit, display, resolver, trust};
+use crate::{audit, display, resolver, trust, cache};
 
 const TAGLINE: &str = "A package trust layer for Arch-based Linux";
+
+static CACHE: Lazy<cache::Cache> = Lazy::new(|| {
+    cache::init(None).expect("Failed to initialize cache")
+});
 
 #[derive(Debug, Parser)]
 #[command(
@@ -100,27 +105,27 @@ pub fn run() -> Result<()> {
 
     match command {
         Commands::Search { query, all } => {
-            let results = resolver::search(&query)?;
+            let results = resolver::search(&CACHE, &query)?;
             display::print_search_results(&results, all);
         }
         Commands::Trust { package } => {
-            let Some(pkg) = resolver::resolve(&package)? else {
+            let Some(pkg) = resolver::resolve(&CACHE, &package)? else {
                 bail!(
                     "Package '{}' was not found in official repositories or the AUR",
                     package
                 );
             };
-            let report = trust::analyze(&pkg);
+            let report = trust::analyze(&CACHE, &pkg);
             display::print_trust_report(&pkg, &report);
         }
         Commands::Audit { package } => {
             if let Some(package) = package {
-                let Some((pkg, report)) = audit::audit_package(&package)? else {
+                let Some((pkg, report)) = audit::audit_package(&CACHE, &package)? else {
                     bail!("Package '{}' is not installed", package);
                 };
                 display::print_trust_report(&pkg, &report);
             } else {
-                let audit = audit::audit_system()?;
+                let audit = audit::audit_system(&CACHE)?;
                 display::print_system_audit(&audit);
                 prompt_audit_details(&audit)?;
             }
@@ -175,7 +180,7 @@ fn prompt_audit_details(audit: &audit::SystemAudit) -> Result<()> {
     println!();
 
     for warning in &audit.warnings {
-        if let Some((pkg, report)) = audit::audit_package(&warning.package_name)? {
+        if let Some((pkg, report)) = audit::audit_package(&CACHE, &warning.package_name)? {
             display::print_trust_report(&pkg, &report);
         }
     }
