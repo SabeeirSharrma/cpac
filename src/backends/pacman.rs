@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::collections::HashMap;
 use std::process::Command;
 
 use super::{PackageInfo, PackageSource};
@@ -32,6 +33,65 @@ pub fn info(package: &str) -> Result<Option<PackageInfo>> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     parse_info_output(&stdout)
+}
+
+/// Get all installed packages via `pacman -Qi`.
+pub fn installed() -> Result<Vec<PackageInfo>> {
+    let output = Command::new("pacman")
+        .arg("-Qi")
+        .output()
+        .context("Failed to run pacman. Is pacman installed?")?;
+
+    if !output.status.success() {
+        return Ok(vec![]);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut packages = Vec::new();
+
+    for block in stdout.split("\n\n") {
+        let block = block.trim();
+        if block.is_empty() {
+            continue;
+        }
+
+        if let Some(mut pkg) = parse_info_output(block)? {
+            pkg.source = PackageSource::Unknown;
+            packages.push(pkg);
+        }
+    }
+
+    Ok(packages)
+}
+
+/// Build a package-to-repository lookup from `pacman -Sl`.
+pub fn repo_map() -> Result<HashMap<String, String>> {
+    let output = Command::new("pacman")
+        .arg("-Sl")
+        .output()
+        .context("Failed to run pacman. Is pacman installed?")?;
+
+    if !output.status.success() {
+        return Ok(HashMap::new());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut map = HashMap::new();
+
+    for line in stdout.lines() {
+        let mut fields = line.split_whitespace();
+        let Some(repo) = fields.next() else {
+            continue;
+        };
+        let Some(name) = fields.next() else {
+            continue;
+        };
+
+        map.entry(name.to_string())
+            .or_insert_with(|| repo.to_string());
+    }
+
+    Ok(map)
 }
 
 /// Parse the output of `pacman -Ss`.

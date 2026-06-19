@@ -11,12 +11,12 @@ Implemented commands:
 ```bash
 cpac search <query>
 cpac trust <package>
+cpac audit [package]
 ```
 
 Stubbed commands:
 
 ```bash
-cpac audit [package]
 cpac install <package>
 cpac remove <package>
 cpac update
@@ -79,12 +79,12 @@ Currently implemented commands:
 ```bash
 cpac search <query>
 cpac trust <package>
+cpac audit [package]
 ```
 
 Commands that are available as placeholders but not implemented yet:
 
 ```bash
-cpac audit [package]
 cpac install <package>
 cpac remove <package>
 cpac update

@@ -92,6 +92,32 @@ pub fn search(query: &str) -> Result<Vec<PackageInfo>> {
     Ok(packages)
 }
 
+/// Get detailed info for multiple AUR packages in one RPC request.
+pub fn info_multi(packages: &[&str]) -> Result<Vec<PackageInfo>> {
+    if packages.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let client = reqwest::blocking::Client::new();
+    let query: Vec<(&str, &str)> = packages.iter().map(|pkg| ("arg[]", *pkg)).collect();
+
+    let response: AurResponse = client
+        .get(format!("{}/info", AUR_RPC_URL))
+        .query(&query)
+        .send()
+        .context("Failed to connect to AUR. Check your internet connection.")?
+        .error_for_status()
+        .context("AUR returned an error response")?
+        .json()
+        .context("Failed to parse AUR response")?;
+
+    Ok(response
+        .results
+        .into_iter()
+        .map(|p| p.into_package_info())
+        .collect())
+}
+
 /// Get detailed info for a specific AUR package.
 pub fn info(package: &str) -> Result<Option<PackageInfo>> {
     let url = format!("{}/info/{}", AUR_RPC_URL, package);

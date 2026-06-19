@@ -1,6 +1,7 @@
 use colored::{ColoredString, Colorize};
 
 use crate::{
+    audit::SystemAudit,
     backends::{PackageInfo, PackageSource},
     trust::TrustReport,
 };
@@ -145,6 +146,50 @@ pub fn print_trust_report(pkg: &PackageInfo, report: &TrustReport) {
     println!();
 }
 
+pub fn print_system_audit(audit: &SystemAudit) {
+    println!();
+    println!("  {}", "System Audit".cyan().bold());
+    println!(
+        "  {} {}",
+        "Installed Packages:".cyan().bold(),
+        audit.counts.total()
+    );
+    println!("  {} {}", "Official:".cyan().bold(), audit.counts.official);
+    println!(
+        "  {} {}",
+        "Third Party:".cyan().bold(),
+        audit.counts.third_party
+    );
+    println!(
+        "  {} {}",
+        "Community:".cyan().bold(),
+        audit.counts.community
+    );
+    println!("  {} {}", "Unknown:".cyan().bold(), audit.counts.unknown);
+
+    println!();
+    println!("  {}", "Warnings".cyan().bold());
+
+    if audit.warnings.is_empty() {
+        println!("    {}", "No warnings found.".dimmed());
+        println!();
+        return;
+    }
+
+    for warning in &audit.warnings {
+        println!(
+            "    {:<24} [{}]",
+            warning.package_name.as_str().bold(),
+            format!(
+                "Trust: {} - {}",
+                warning_score_label(warning.score, &warning.tier),
+                warning.reason
+            )
+        );
+    }
+    println!();
+}
+
 /// Color tier for the score box.
 #[derive(Clone, Copy)]
 enum ScoreColor {
@@ -184,6 +229,14 @@ fn colored_score(score: u32) -> ColoredString {
         70..=100 => text.green(),
         40..=69 => text.yellow(),
         _ => text.red(),
+    }
+}
+
+fn warning_score_label(score: u32, tier: &crate::trust::TrustTier) -> String {
+    if matches!(tier, crate::trust::TrustTier::Unknown) {
+        "Unknown".to_string()
+    } else {
+        format!("{}/100", score)
     }
 }
 

@@ -1,3 +1,4 @@
+mod audit;
 mod backends;
 mod cli;
 mod display;

@@ -1,7 +1,8 @@
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
+use std::io::{self, IsTerminal, Write};
 
-use crate::{display, resolver, trust};
+use crate::{audit, display, resolver, trust};
 
 const TAGLINE: &str = "A package trust layer for Arch-based Linux";
 
@@ -46,7 +47,7 @@ enum Commands {
         package: String,
     },
 
-    /// System-wide trust audit. Coming in v0.2.
+    /// System-wide trust audit.
     Audit {
         /// Optional package name for a focused audit.
         package: Option<String>,
@@ -114,9 +115,14 @@ pub fn run() -> Result<()> {
         }
         Commands::Audit { package } => {
             if let Some(package) = package {
-                println!("cpac audit {} is coming in v0.2", package);
+                let Some((pkg, report)) = audit::audit_package(&package)? else {
+                    bail!("Package '{}' is not installed", package);
+                };
+                display::print_trust_report(&pkg, &report);
             } else {
-                println!("cpac audit is coming in v0.2");
+                let audit = audit::audit_system()?;
+                display::print_system_audit(&audit);
+                prompt_audit_details(&audit)?;
             }
         }
         Commands::Install { package } => {
@@ -138,6 +144,40 @@ pub fn run() -> Result<()> {
             AurAction::Enable => println!("cpac aur enable is coming in v0.4"),
             AurAction::Disable => println!("cpac aur disable is coming in v0.4"),
         },
+    }
+
+    Ok(())
+}
+
+fn prompt_audit_details(audit: &audit::SystemAudit) -> Result<()> {
+    if audit.warnings.is_empty() || !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+        return Ok(());
+    }
+
+    print!("View Details? [Y/n] ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let choice = input.trim();
+
+    if choice.eq_ignore_ascii_case("n") || choice.eq_ignore_ascii_case("no") {
+        return Ok(());
+    }
+
+    if !choice.is_empty()
+        && !choice.eq_ignore_ascii_case("y")
+        && !choice.eq_ignore_ascii_case("yes")
+    {
+        return Ok(());
+    }
+
+    println!();
+
+    for warning in &audit.warnings {
+        if let Some((pkg, report)) = audit::audit_package(&warning.package_name)? {
+            display::print_trust_report(&pkg, &report);
+        }
     }
 
     Ok(())
