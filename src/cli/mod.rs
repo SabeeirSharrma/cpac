@@ -87,6 +87,9 @@ enum Commands {
         /// AUR setting to change.
         action: AurAction,
     },
+
+    /// Clear the local metadata cache.
+    ClearCache,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -149,6 +152,13 @@ pub fn run() -> Result<()> {
             AurAction::Enable => println!("cpac aur enable is coming in v0.4"),
             AurAction::Disable => println!("cpac aur disable is coming in v0.4"),
         },
+        Commands::ClearCache => {
+            if let Err(e) = cache::clear_cache() {
+                eprintln!("Failed to clear cache: {e}");
+            } else {
+                println!("Cache cleared successfully.");
+            }
+        }
     }
 
     Ok(())

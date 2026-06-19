@@ -1,6 +1,7 @@
 use anyhow::Result;
 use dirs;
 use sled::{Db, IVec, open};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Initialize the cache directory and open sled databases.
@@ -91,4 +92,15 @@ impl Cache {
         self.pkgbuilds.insert(key, ivec)?;
         Ok(())
     }
+}
+
+/// Remove the entire cache directory.
+pub fn clear_cache() -> Result<()> {
+    let cache_dir = dirs::home_dir()
+        .expect("could not get home dir")
+        .join(".cpac/cache");
+    if cache_dir.exists() {
+        fs::remove_dir_all(cache_dir)?;
+    }
+    Ok(())
 }
