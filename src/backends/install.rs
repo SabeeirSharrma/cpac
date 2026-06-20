@@ -14,11 +14,15 @@ pub enum InstallBackend {
 impl InstallBackend {
     /// Detect the best available AUR helper, preferring paru over yay.
     pub fn detect_aur() -> Option<Self> {
-        if Command::new("paru").arg("--version").output().is_ok() {
-            return Some(InstallBackend::Paru);
+        if let Ok(output) = Command::new("paru").arg("--version").output() {
+            if output.status.success() {
+                return Some(InstallBackend::Paru);
+            }
         }
-        if Command::new("yay").arg("--version").output().is_ok() {
-            return Some(InstallBackend::Yay);
+        if let Ok(output) = Command::new("yay").arg("--version").output() {
+            if output.status.success() {
+                return Some(InstallBackend::Yay);
+            }
         }
         None
     }

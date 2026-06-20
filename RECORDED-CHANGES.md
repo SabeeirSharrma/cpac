@@ -62,8 +62,8 @@ New suspicious pattern detection in `src/trust/mod.rs`:
 ### New Backend Module
 
 - `src/backends/install.rs` — `InstallBackend` enum (Pacman/Paru/Yay), backend selection, install/remove/update operations
-- `src/backends/aur.rs` — Added `fetch_pkgbuild()` to retrieve PKGBUILD from AUR git
-- `src/prompt.rs` — Shared confirmation prompt utility
+- `src/backends/aur.rs` — Added `fetch_pkgbuild()` with timeout and proper HTTP error handling (404 vs 5xx)
+- `src/prompt.rs` — Shared confirmation prompt utility with EOF handling
 
 ### Resolver Extensions
 
@@ -133,15 +133,15 @@ $ cpac remove firefox --force
 
 - `Cargo.toml` — version bump to 0.5.0
 - `src/main.rs` — added `install`, `remove`, `update`, `diff`, `prompt` modules
-- `src/backends/install.rs` — new install backend module (simplified match arms)
-- `src/backends/aur.rs` — added `fetch_pkgbuild()` (removed fragile 404 content check)
+- `src/backends/install.rs` — new install backend module (simplified match arms, exit status check for AUR detection)
+- `src/backends/aur.rs` — added `fetch_pkgbuild()` with 30s timeout, proper HTTP error handling (404 returns None, 5xx returns error)
 - `src/backends/mod.rs` — export `InstallBackend`
 - `src/backends/pacman.rs` — added `is_package_installed()` for efficient single-package check
-- `src/prompt.rs` — new shared confirmation prompt utility
+- `src/prompt.rs` — new shared confirmation prompt utility with EOF handling
 - `src/resolver/mod.rs` — `fetch_pkgbuild()`, `fetch_pkgbuild_for_package()`, `is_installed()` (optimized)
-- `src/trust/mod.rs` — PKGBUILD diff analysis, suspicious pattern detection, caching (fixed double-counting, removed `source` false positive)
+- `src/trust/mod.rs` — PKGBUILD diff analysis, suspicious pattern detection, caching (fixed double-counting, removed `source` false positive, removed empty dependency block)
 - `src/install.rs` — new install command implementation (consolidated dry-run, shared prompt)
 - `src/remove.rs` — new remove command implementation (shared prompt)
-- `src/update.rs` — new update command implementation
+- `src/update.rs` — new update command implementation (auto AUR update when enabled)
 - `src/diff.rs` — new diff command implementation (uses shared PKGBUILD fetch)
 - `src/cli/mod.rs` — updated command definitions and imports

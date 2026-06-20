@@ -517,14 +517,6 @@ fn check_suspicious_pattern(line: &str, patterns: &mut Vec<String>) {
         patterns.push(format!("Dynamic pkgver from network: {}", line));
     }
 
-    // New external dependencies not in depends array
-    if lower.contains("depends=(")
-        || lower.contains("makedepends=(")
-        || lower.contains("optdepends=(")
-    {
-        // This is normal, but could be flagged if unexpected
-    }
-
     // Pip/npm/cargo install in build
     if lower.contains("pip install")
         || lower.contains("npm install")

@@ -1,10 +1,12 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::DateTime;
 use serde::Deserialize;
+use std::time::Duration;
 
 use super::{PackageInfo, PackageSource};
 
 const AUR_RPC_URL: &str = "https://aur.archlinux.org/rpc/";
+const PKGBUILD_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// AUR RPC response envelope.
 #[derive(Debug, Deserialize)]
@@ -158,10 +160,26 @@ pub fn fetch_pkgbuild(package: &str) -> Result<Option<String>> {
         package
     );
 
-    let response = reqwest::blocking::get(&url).context("Failed to connect to AUR for PKGBUILD")?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(PKGBUILD_FETCH_TIMEOUT)
+        .build()
+        .context("Failed to create HTTP client")?;
 
-    if !response.status().is_success() {
-        return Ok(None);
+    let response = client
+        .get(&url)
+        .send()
+        .context("Failed to connect to AUR for PKGBUILD")?;
+
+    let status = response.status();
+    if status.is_client_error() {
+        // 4xx errors (including 404) mean package not found
+        if status.as_u16() == 404 {
+            return Ok(None);
+        }
+        return Err(anyhow!("AUR returned client error {} for package '{}'", status, package));
+    }
+    if status.is_server_error() {
+        return Err(anyhow!("AUR server error {} for package '{}'. Try again later.", status, package));
     }
 
     let content = response.text().context("Failed to read PKGBUILD content")?;
