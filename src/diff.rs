@@ -14,11 +14,34 @@ pub fn run(cache: &Cache, package: &str) -> Result<()> {
         bail!("Package '{}' not found in official repositories or AUR", package);
     };
 
+    // Check if PKGBUILD diff is supported for this package source
+    let source_desc = match &pkg.source {
+        crate::backends::PackageSource::Aur => "AUR",
+        crate::backends::PackageSource::Official { repo } => {
+            bail!(
+                "PKGBUILD diff is not supported for official repository packages ({}).\n\
+                Official Arch packages don't publish PKGBUILDs in a readily accessible format.\n\
+                This command currently only supports AUR packages.",
+                repo
+            );
+        }
+        crate::backends::PackageSource::ThirdParty => {
+            bail!(
+                "PKGBUILD diff is not supported for third-party repository packages.\n\
+                Third-party repos typically don't expose PKGBUILDs via their RPC interfaces.\n\
+                This command currently only supports AUR packages."
+            );
+        }
+        crate::backends::PackageSource::Unknown => {
+            bail!("Cannot determine package source for '{}'", package);
+        }
+    };
+
     // Check if we have a cached PKGBUILD
     let cached_pkgbuild = get_cached_pkgbuild(cache, package)?;
 
-    // Fetch current PKGBUILD
-    let current_pkgbuild = fetch_current_pkgbuild(&pkg)?;
+    // Fetch current PKGBUILD (only works for AUR)
+    let current_pkgbuild = crate::backends::aur::fetch_pkgbuild(&pkg.name)?;
 
     match (cached_pkgbuild, current_pkgbuild) {
         (Some(ref old), Some(ref new)) => {
@@ -26,31 +49,19 @@ pub fn run(cache: &Cache, package: &str) -> Result<()> {
             print_diff(&diff, package);
         }
         (None, Some(ref new)) => {
-            println!("No cached PKGBUILD found for '{}'. Showing current PKGBUILD:\n", package);
+            println!("No cached PKGBUILD found for '{}'. Showing current PKGBUILD from {}:\n", package, source_desc);
             println!("{}", new);
         }
         (Some(ref old), None) => {
-            println!("Cached PKGBUILD for '{}', but unable to fetch current version:\n", package);
+            println!("Cached PKGBUILD for '{}', but unable to fetch current version from {}:\n", package, source_desc);
             println!("{}", old);
         }
         (None, None) => {
-            bail!("No cached PKGBUILD found and unable to fetch current PKGBUILD for '{}'", package);
+            bail!("No cached PKGBUILD found and unable to fetch current PKGBUILD from {} for '{}'", source_desc, package);
         }
     }
 
     Ok(())
-}
-
-/// Fetch current PKGBUILD for a package.
-fn fetch_current_pkgbuild(pkg: &crate::backends::PackageInfo) -> Result<Option<String>> {
-    match &pkg.source {
-        crate::backends::PackageSource::Aur => crate::backends::aur::fetch_pkgbuild(&pkg.name),
-        crate::backends::PackageSource::Official { .. } | crate::backends::PackageSource::ThirdParty => {
-            // For official packages, we'd need ABS or similar
-            Ok(None)
-        }
-        crate::backends::PackageSource::Unknown => Ok(None),
-    }
 }
 
 /// Print the PKGBUILD diff in a readable format.

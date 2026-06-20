@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
 use chrono::DateTime;
 use serde::Deserialize;
-use std::process::Command;
 
-use super::{InstallBackend, PackageInfo, PackageSource};
+use super::{PackageInfo, PackageSource};
 
 const AUR_RPC_URL: &str = "https://aur.archlinux.org/rpc/";
 
@@ -171,41 +170,4 @@ pub fn fetch_pkgbuild(package: &str) -> Result<Option<String>> {
     }
 
     Ok(Some(content))
-}
-
-/// Build the AUR package locally to get the built package info.
-/// This is used for installing AUR packages when we need to build from source.
-pub fn build_aur_package(package: &str, backend: InstallBackend) -> Result<()> {
-    // Clone the AUR git repo
-    let repo_url = format!("https://aur.archlinux.org/{}.git", package);
-    let temp_dir = std::env::temp_dir().join(format!("cpac-aur-{}", package));
-
-    // Clean up any existing directory
-    let _ = std::fs::remove_dir_all(&temp_dir);
-
-    // Clone
-    let status = Command::new("git")
-        .args(["clone", "--depth", "1", &repo_url, temp_dir.to_str().unwrap()])
-        .status()
-        .context("Failed to clone AUR repository")?;
-
-    if !status.success() {
-        anyhow::bail!("Failed to clone AUR package: {}", package);
-    }
-
-    // Build and install using the selected backend
-    let status = Command::new(backend.cmd())
-        .current_dir(&temp_dir)
-        .args(["-S", "--noconfirm", "."])
-        .status()
-        .context("Failed to build AUR package")?;
-
-    if !status.success() {
-        anyhow::bail!("Failed to build AUR package: {}", package);
-    }
-
-    // Clean up
-    let _ = std::fs::remove_dir_all(&temp_dir);
-
-    Ok(())
 }

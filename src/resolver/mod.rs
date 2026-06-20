@@ -4,7 +4,7 @@ use anyhow::Result;
 use crate::cache::Cache;
 use crate::config;
 
-use crate::backends::{self, PackageInfo, PackageSource, aur};
+use crate::backends::{self, PackageInfo, PackageSource};
 
 /// Search official repositories and AUR, ranked by relevance then source.
 pub fn search(cache: &Cache, query: &str) -> Result<Vec<PackageInfo>> {
@@ -122,19 +122,6 @@ fn source_rank(source: &PackageSource) -> u8 {
         PackageSource::ThirdParty => 1,
         PackageSource::Aur => 2,
         PackageSource::Unknown => 3,
-    }
-}
-
-/// Fetch PKGBUILD for a package from the appropriate source.
-pub fn fetch_pkgbuild(package: &str, source: &PackageSource) -> Result<Option<String>> {
-    match source {
-        PackageSource::Aur => aur::fetch_pkgbuild(package),
-        PackageSource::Official { .. } | PackageSource::ThirdParty => {
-            // For official repos, we'd need to fetch from ABS or similar
-            // For now, return None - could be implemented later
-            Ok(None)
-        }
-        PackageSource::Unknown => Ok(None),
     }
 }
 

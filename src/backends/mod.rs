@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+#[allow(unused)]
 pub use install::InstallBackend;
 
 /// The source repository a package comes from.

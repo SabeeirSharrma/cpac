@@ -33,6 +33,8 @@ impl InstallBackend {
     }
 
     /// Check if this backend can install from the given source.
+    /// Currently unused but kept for potential future use in backend selection logic.
+    #[allow(dead_code)]
     pub fn can_install(&self, source: &PackageSource) -> bool {
         match (self, source) {
             (InstallBackend::Pacman, PackageSource::Official { .. }) => true,

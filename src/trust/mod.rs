@@ -1,7 +1,6 @@
 use anyhow::Result;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
 use crate::backends::{PackageInfo, PackageSource};
 use crate::cache::Cache;
@@ -64,6 +63,12 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
     let mut signals = Vec::new();
     let mut total: i32 = 0;
 
+    // Track which signals have unknown metadata vs actual negative evidence
+    let mut age_unknown = false;
+    let mut maintainer_unknown = false;
+    let mut pop_unknown = false;
+    let mut recency_unknown = false;
+
     // --- Signal 1: Repository Source (max +30) ---
     let source_points = match &pkg.source {
         PackageSource::Official { .. } => 30,
@@ -86,7 +91,7 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
     total += source_points;
 
     // --- Signal 2: Package Age (max +15) ---
-    let (age_points, _) = if let Some(submitted) = pkg.first_submitted {
+    let age_points = if let Some(submitted) = pkg.first_submitted {
         let age_days = (Utc::now() - submitted).num_days();
         let pts = match age_days {
             0..=30 => 2,      // Less than a month
@@ -103,9 +108,10 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
             max_points: 15,
             detail,
         });
-        (pts, false)
+        pts
     } else {
         // No age data available - neutral score with clear "metadata unavailable" reason
+        age_unknown = true;
         let pts = match &pkg.source {
             PackageSource::Official { .. } => 13,
             PackageSource::ThirdParty => 8,  // Partial credit - metadata not tracked by distro repos
@@ -118,19 +124,19 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
             max_points: 15,
             detail: "Metadata unavailable".to_string(),
         });
-        (pts, true)
+        pts
     };
     total += age_points;
 
     // --- Signal 3: Maintainer (max +15) ---
-    let (maintainer_points, _) = if pkg.orphan {
+    let maintainer_points = if pkg.orphan {
         signals.push(TrustSignal {
             name: "Maintainer".to_string(),
             points: -5,
             max_points: 15,
             detail: "Orphaned — no active maintainer".to_string(),
         });
-        (-5, false)
+        -5
     } else if let Some(ref maintainer) = pkg.maintainer {
         let pts =
             if maintainer.contains('@') || matches!(&pkg.source, PackageSource::Official { .. }) {
@@ -145,9 +151,10 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
             max_points: 15,
             detail: format!("Maintained by {}", maintainer),
         });
-        (pts, false)
+        pts
     } else {
         // No maintainer info available - neutral, not negative
+        maintainer_unknown = true;
         let pts = match &pkg.source {
             PackageSource::Official { .. } => 10,
             PackageSource::ThirdParty => 5,
@@ -160,12 +167,12 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
             max_points: 15,
             detail: "Metadata unavailable".to_string(),
         });
-        (pts, true)
+        pts
     };
     total += maintainer_points;
 
     // --- Signal 4: Popularity / Votes (max +15) ---
-    let (pop_points, pop_unknown) = if let Some(votes) = pkg.votes {
+    let pop_points = if let Some(votes) = pkg.votes {
         let pts = match votes {
             0..=5 => 2,
             6..=25 => 5,
@@ -180,7 +187,7 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
             max_points: 15,
             detail: format!("{} votes", votes),
         });
-        (pts, false)
+        pts
     } else {
         // No popularity data - neutral, not negative
         let pts = match &pkg.source {
@@ -195,12 +202,13 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
             max_points: 15,
             detail: "Metadata unavailable".to_string(),
         });
-        (pts, true)
+        pop_unknown = true;
+        pts
     };
     total += pop_points;
 
     // --- Signal 5: Last Updated Recency (max +15) ---
-    let (recency_points, recency_unknown) = if let Some(modified) = pkg.last_modified {
+    let recency_points = if let Some(modified) = pkg.last_modified {
         let days_since = (Utc::now() - modified).num_days();
         let pts = match days_since {
             0..=7 => 15,    // Updated within a week
@@ -217,7 +225,7 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
             max_points: 15,
             detail: format_recency(days_since),
         });
-        (pts, false)
+        pts
     } else {
         // No recency data - neutral, not negative
         let pts = match &pkg.source {
@@ -232,7 +240,8 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
             max_points: 15,
             detail: "Metadata unavailable".to_string(),
         });
-        (pts, true)
+        recency_unknown = true;
+        pts
     };
     total += recency_points;
 
@@ -247,17 +256,38 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         total -= 10;
     }
 
+    // Count unknown vs negative signals
+    let unknown_count = [
+        age_unknown,
+        maintainer_unknown,
+        pop_unknown,
+        recency_unknown,
+    ].iter().filter(|&&x| x).count();
+    
+    let negative_signals = signals.iter().filter(|s| s.points < 0).count();
+
     // Clamp to 0..100
     let score = total.clamp(0, 100) as u32;
 
-    let recommendation = recommendation(score).to_string();
+    // Adjust recommendation: if all non-positive signals are just unknown metadata (no actual negative signals),
+    // don't penalize packages that only have missing metadata
+    let recommendation = if negative_signals == 0 && unknown_count > 0 {
+        // No actual negative signals, only missing metadata - don't go below Moderate
+        match score {
+            60..=100 => "Safe",
+            40..=59 => "Moderate",
+            _ => "Moderate",  // Floor at Moderate when only missing metadata
+        }
+    } else {
+        recommendation(score)
+    };
 
     let report = TrustReport {
         package_name: pkg.name.clone(),
         tier,
         score,
         signals,
-        recommendation,
+        recommendation: recommendation.to_string(),
     };
 
     // Cache the report
@@ -342,34 +372,33 @@ pub struct PkgbuildDiff {
     pub suspicious_patterns: Vec<String>,
 }
 
-/// Analyze a PKGBUILD diff for suspicious patterns.
+/// Analyze a PKGBUILD diff for suspicious patterns using LCS-based diff.
 pub fn analyze_pkgbuild_diff(old_pkgbuild: &str, new_pkgbuild: &str) -> PkgbuildDiff {
+    let old_lines: Vec<&str> = old_pkgbuild.lines().collect();
+    let new_lines: Vec<&str> = new_pkgbuild.lines().collect();
+
+    // Compute LCS-based diff
+    let diff_ops = compute_lcs_diff(&old_lines, &new_lines);
+
     let mut additions = Vec::new();
     let mut deletions = Vec::new();
     let mut suspicious_patterns = Vec::new();
 
-    let old_lines: Vec<&str> = old_pkgbuild.lines().collect();
-    let new_lines: Vec<&str> = new_pkgbuild.lines().collect();
-
-    // Simple diff - find lines that are added/removed
-    let old_set: HashSet<&str> = old_lines.iter().copied().collect();
-    let new_set: HashSet<&str> = new_lines.iter().copied().collect();
-
-    for line in &new_lines {
-        if !old_set.contains(line) {
-            let trimmed = line.trim();
-            if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                additions.push(trimmed.to_string());
-                check_suspicious_pattern(trimmed, &mut suspicious_patterns);
+    for op in diff_ops {
+        match op {
+            DiffOp::Equal => {}
+            DiffOp::Delete(line) => {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                    deletions.push(trimmed.to_string());
+                }
             }
-        }
-    }
-
-    for line in &old_lines {
-        if !new_set.contains(line) {
-            let trimmed = line.trim();
-            if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                deletions.push(trimmed.to_string());
+            DiffOp::Insert(line) => {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                    additions.push(trimmed.to_string());
+                    check_suspicious_pattern(trimmed, &mut suspicious_patterns);
+                }
             }
         }
     }
@@ -379,6 +408,53 @@ pub fn analyze_pkgbuild_diff(old_pkgbuild: &str, new_pkgbuild: &str) -> Pkgbuild
         deletions,
         suspicious_patterns,
     }
+}
+
+/// Diff operation types for LCS-based diff.
+enum DiffOp<'a> {
+    Equal,
+    Delete(&'a str),
+    Insert(&'a str),
+}
+
+/// Compute LCS-based diff between two sequences of lines.
+fn compute_lcs_diff<'a>(old: &[&'a str], new: &[&'a str]) -> Vec<DiffOp<'a>> {
+    let m = old.len();
+    let n = new.len();
+
+    // Build LCS DP table
+    let mut dp = vec![vec![0; n + 1]; m + 1];
+    for i in 1..=m {
+        for j in 1..=n {
+            if old[i - 1] == new[j - 1] {
+                dp[i][j] = dp[i - 1][j - 1] + 1;
+            } else {
+                dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
+            }
+        }
+    }
+
+    // Backtrack to construct diff operations
+    let mut ops = Vec::new();
+    let mut i = m;
+    let mut j = n;
+
+    while i > 0 || j > 0 {
+        if i > 0 && j > 0 && old[i - 1] == new[j - 1] {
+            ops.push(DiffOp::Equal);
+            i -= 1;
+            j -= 1;
+        } else if j > 0 && (i == 0 || dp[i][j - 1] >= dp[i - 1][j]) {
+            ops.push(DiffOp::Insert(new[j - 1]));
+            j -= 1;
+        } else if i > 0 {
+            ops.push(DiffOp::Delete(old[i - 1]));
+            i -= 1;
+        }
+    }
+
+    ops.reverse();
+    ops
 }
 
 /// Check a single line for suspicious patterns.
@@ -491,4 +567,95 @@ pub fn get_cached_pkgbuild(cache: &Cache, package: &str) -> Result<Option<String
 pub fn cache_pkgbuild(cache: &Cache, package: &str, pkgbuild: &str) -> Result<()> {
     let key = format!("pkgbuild:{}", package);
     cache.insert_pkgbuilds(&key, pkgbuild.as_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backends::{PackageInfo, PackageSource, PackageSource::*};
+    use crate::cache::{self, Cache};
+    use std::sync::OnceLock;
+
+    fn test_cache() -> &'static Cache {
+        static CACHE: OnceLock<Cache> = OnceLock::new();
+        CACHE.get_or_init(|| {
+            cache::init(None).expect("Failed to initialize test cache")
+        })
+    }
+
+    fn make_third_party_pkg(name: &str) -> PackageInfo {
+        PackageInfo {
+            name: name.to_string(),
+            version: "1.0.0".to_string(),
+            description: "Test package".to_string(),
+            source: ThirdParty,
+            maintainer: None,  // No maintainer to test unknown metadata
+            votes: None,
+            popularity: None,
+            first_submitted: None,
+            last_modified: None,
+            out_of_date: false,
+            orphan: false,
+            url: None,
+            licenses: vec![],
+            depends: vec![],
+            install_size: None,
+        }
+    }
+
+    #[test]
+    fn all_signals_unknown_zero_negative_signals_floors_at_moderate() {
+        // Test case for ThirdParty package with all metadata unavailable but no negative signals
+        let pkg = make_third_party_pkg("test-package");
+        let cache = test_cache();
+        let report = analyze(cache, &pkg);
+
+        // Score should be: 15 (ThirdParty) + 8 (age) + 5 (maintainer) + 5 (popularity) + 5 (recency) = 38
+        // But with floor at Moderate, recommendation should be "Moderate"
+        assert_eq!(report.recommendation, "Moderate");
+        assert!(report.score >= 38 && report.score <= 45); // Approximate range
+
+        // Verify no negative signals
+        let negative_signals = report.signals.iter().filter(|s| s.points < 0).count();
+        assert_eq!(negative_signals, 0, "Should have no negative signals");
+
+        // Verify unknown metadata signals are marked correctly
+        let unknown_signals = report.signals.iter()
+            .filter(|s| s.detail == "Metadata unavailable")
+            .count();
+        assert_eq!(unknown_signals, 4, "Should have 4 signals with 'Metadata unavailable'");
+    }
+
+    #[test]
+    fn official_package_with_unknown_metadata_stays_safe() {
+        // Official packages should still get SAFE with unknown metadata
+        let mut pkg = make_third_party_pkg("official-test");
+        pkg.source = Official { repo: "core".to_string() };
+        // Official packages always have maintainers in reality
+        pkg.maintainer = Some("Official Maintainer <official@archlinux.org>".to_string());
+        
+        let cache = test_cache();
+        let report = analyze(cache, &pkg);
+
+        // Official base score: 30 (source) + 13 (age) + 13 (maintainer) + 12 (popularity) + 12 (recency) = 80
+        assert_eq!(report.recommendation, "Safe");
+        assert_eq!(report.score, 80);
+    }
+
+    #[test]
+    fn actual_negative_signals_still_penalize() {
+        // Package with actual negative signal (orphaned) should be penalized
+        let mut pkg = make_third_party_pkg("orphaned-package");
+        pkg.orphan = true;
+        
+        let cache = test_cache();
+        let report = analyze(cache, &pkg);
+
+        // Should have negative signal from orphaned status
+        let negative_signals = report.signals.iter().filter(|s| s.points < 0).count();
+        assert!(negative_signals > 0, "Should have negative signals for orphaned package");
+        
+        // Recommendation should not floor at Moderate when there are actual negative signals
+        assert_ne!(report.recommendation, "Moderate", "Should not floor at Moderate with negative signals");
+    }
 }
