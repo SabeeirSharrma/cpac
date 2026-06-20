@@ -64,6 +64,16 @@ pub fn installed() -> Result<Vec<PackageInfo>> {
     Ok(packages)
 }
 
+/// Check if a specific package is installed via `pacman -Q`.
+pub fn is_package_installed(package: &str) -> Result<bool> {
+    let output = Command::new("pacman")
+        .args(["-Q", package])
+        .output()
+        .context("Failed to run pacman. Is pacman installed?")?;
+
+    Ok(output.status.success())
+}
+
 /// Build a package-to-repository lookup from `pacman -Sl`.
 pub fn repo_map() -> Result<HashMap<String, String>> {
     let output = Command::new("pacman")

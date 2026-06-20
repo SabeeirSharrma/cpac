@@ -34,9 +34,9 @@ Version 0.5 introduces the core package management commands: `cpac install`, `cp
 #### `cpac update`
 
 - **Official databases**: Runs `pacman -Sy` to refresh official repositories
-- **AUR databases**: Optional `--aur` flag runs `paru -Sy` or `yay -Sy` (prefers paru)
+- **AUR databases**: Updates AUR automatically if enabled; use `--aur` to force AUR update when disabled
 - **Sudo preflight**: Requests sudo credentials before syncing official package databases
-- **AUR gating**: Only updates AUR if enabled via `cpac aur enable`
+- **AUR gating**: Updates AUR by default when enabled via `cpac aur enable`; `--aur` flag forces AUR update when disabled
 
 #### `cpac diff <package>`
 
@@ -53,7 +53,7 @@ New suspicious pattern detection in `src/trust/mod.rs`:
 
 - Remote script execution (`curl | sh`, `wget | bash`)
 - Base64/hex decoding (obfuscation)
-- Inline `eval`/`exec`/`source`
+- Inline `eval`/`exec` (removed overly broad `source` check)
 - Aggressive `rm -rf` outside pkgdir/srcdir
 - Dynamic `pkgver` from network
 - Language package manager installs (`pip install`, `npm install`, `cargo install` in build)
@@ -63,17 +63,19 @@ New suspicious pattern detection in `src/trust/mod.rs`:
 
 - `src/backends/install.rs` — `InstallBackend` enum (Pacman/Paru/Yay), backend selection, install/remove/update operations
 - `src/backends/aur.rs` — Added `fetch_pkgbuild()` to retrieve PKGBUILD from AUR git
+- `src/prompt.rs` — Shared confirmation prompt utility
 
 ### Resolver Extensions
 
 - `fetch_pkgbuild()` — Fetch PKGBUILD from appropriate source
-- `is_installed()` — Check if package is installed
+- `fetch_pkgbuild_for_package()` — Shared PKGBUILD fetching for install/diff
+- `is_installed()` — Check if package is installed (optimized via `pacman -Q`)
 - PKGBUILD caching integration for diffing
 
 ### Trust Extensions
 
-- `analyze_pkgbuild_diff()` — Compare two PKGBUILDs for suspicious changes
-- `diff_to_signals()` — Convert diff findings to trust signals (negative points)
+- `analyze_pkgbuild_diff()` — Compare two PKGBUILDs for suspicious changes (LCS-based ordered diff)
+- `diff_to_signals()` — Convert diff findings to trust signals (fixed: no double-counting)
 - `get_cached_pkgbuild()` / `cache_pkgbuild()` — PKGBUILD cache operations
 
 ---
@@ -130,14 +132,16 @@ $ cpac remove firefox --force
 ## Files Changed (v0.5)
 
 - `Cargo.toml` — version bump to 0.5.0
-- `src/main.rs` — added `install`, `remove`, `update`, `diff` modules
-- `src/backends/install.rs` — new install backend module
-- `src/backends/aur.rs` — added `fetch_pkgbuild()`, `build_aur_package()`
+- `src/main.rs` — added `install`, `remove`, `update`, `diff`, `prompt` modules
+- `src/backends/install.rs` — new install backend module (simplified match arms)
+- `src/backends/aur.rs` — added `fetch_pkgbuild()` (removed fragile 404 content check)
 - `src/backends/mod.rs` — export `InstallBackend`
-- `src/resolver/mod.rs` — `fetch_pkgbuild()`, `is_installed()`, PKGBUILD caching
-- `src/trust/mod.rs` — PKGBUILD diff analysis, suspicious pattern detection, caching
-- `src/install.rs` — new install command implementation
-- `src/remove.rs` — new remove command implementation
+- `src/backends/pacman.rs` — added `is_package_installed()` for efficient single-package check
+- `src/prompt.rs` — new shared confirmation prompt utility
+- `src/resolver/mod.rs` — `fetch_pkgbuild()`, `fetch_pkgbuild_for_package()`, `is_installed()` (optimized)
+- `src/trust/mod.rs` — PKGBUILD diff analysis, suspicious pattern detection, caching (fixed double-counting, removed `source` false positive)
+- `src/install.rs` — new install command implementation (consolidated dry-run, shared prompt)
+- `src/remove.rs` — new remove command implementation (shared prompt)
 - `src/update.rs` — new update command implementation
-- `src/diff.rs` — new diff command implementation
+- `src/diff.rs` — new diff command implementation (uses shared PKGBUILD fetch)
 - `src/cli/mod.rs` — updated command definitions and imports

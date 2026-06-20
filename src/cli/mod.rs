@@ -89,7 +89,7 @@ enum Commands {
 
     /// Update package metadata and sources.
     Update {
-        /// Also update AUR packages if AUR is enabled.
+        /// Force AUR update even if AUR is disabled.
         #[arg(long)]
         aur: bool,
     },

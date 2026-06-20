@@ -1,9 +1,9 @@
 use anyhow::{bail, Context, Result};
-use std::io::{self, Write};
 
 use crate::{
     backends::install::{ensure_sudo, remove_package},
     cache::Cache,
+    prompt,
     resolver,
     trust::analyze,
 };
@@ -31,7 +31,7 @@ pub fn run(cache: &Cache, package: &str, recursive: bool, force: bool) -> Result
             println!("\nNote: Use --recursive to also remove unneeded dependencies.");
         }
 
-        if !prompt_confirmation()? {
+        if !prompt::prompt_confirmation()? {
             println!("Aborted.");
             return Ok(());
         }
@@ -45,16 +45,4 @@ pub fn run(cache: &Cache, package: &str, recursive: bool, force: bool) -> Result
 
     println!("Successfully removed '{}'", package);
     Ok(())
-}
-
-/// Prompt for user confirmation.
-fn prompt_confirmation() -> Result<bool> {
-    print!("Continue? [Y/n] ");
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    let choice = input.trim();
-
-    Ok(choice.is_empty() || choice.eq_ignore_ascii_case("y") || choice.eq_ignore_ascii_case("yes"))
 }

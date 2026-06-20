@@ -8,18 +8,23 @@ use crate::{
 };
 
 /// Run the update command.
-pub fn run(cache: &Cache, update_aur: bool) -> Result<()> {
+pub fn run(cache: &Cache, force_aur: bool) -> Result<()> {
+    let aur_enabled = config::is_aur_enabled();
+    let should_update_aur = force_aur || aur_enabled;
+
     // Update official repositories
     println!("Updating official package databases...");
     ensure_sudo().context("Failed to request sudo credentials for package update")?;
     update_databases().context("Failed to update official package databases")?;
 
-    // Update AUR if requested and enabled
-    if update_aur && config::is_aur_enabled() {
-        println!("Updating AUR package databases...");
-        update_aur_databases().context("Failed to update AUR databases")?;
-    } else if update_aur && !config::is_aur_enabled() {
-        println!("AUR is disabled. Run 'cpac aur enable' to allow AUR updates.");
+    // Update AUR if enabled or explicitly requested
+    if should_update_aur {
+        if !aur_enabled && force_aur {
+            println!("AUR is disabled. Run 'cpac aur enable' to allow AUR updates.");
+        } else {
+            println!("Updating AUR package databases...");
+            update_aur_databases().context("Failed to update AUR databases")?;
+        }
     }
 
     // Repository state changed, so cached package metadata is no longer trustworthy.

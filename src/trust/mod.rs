@@ -491,7 +491,7 @@ fn check_suspicious_pattern(line: &str, patterns: &mut Vec<String>) {
     }
 
     // Inline script execution
-    if lower.contains("eval ") || lower.contains("exec ") || lower.contains("source ") {
+    if lower.contains("eval ") || lower.contains("exec ") {
         patterns.push(format!("Inline script execution: {}", line));
     }
 
@@ -562,17 +562,6 @@ pub fn diff_to_signals(diff: &PkgbuildDiff) -> Vec<TrustSignal> {
             detail: "No suspicious changes detected".to_string(),
         });
     } else {
-        let penalty = (diff.suspicious_patterns.len() as i32 * -10).max(-50);
-        signals.push(TrustSignal {
-            name: "Build Script Changes".to_string(),
-            points: penalty,
-            max_points: 0,
-            detail: format!(
-                "{} suspicious change(s) detected",
-                diff.suspicious_patterns.len()
-            ),
-        });
-
         for pattern in &diff.suspicious_patterns {
             signals.push(TrustSignal {
                 name: "Suspicious Pattern".to_string(),

@@ -6,6 +6,7 @@ mod config;
 mod diff;
 mod display;
 mod install;
+mod prompt;
 mod remove;
 mod resolver;
 mod trust;

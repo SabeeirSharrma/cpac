@@ -86,11 +86,7 @@ pub fn ensure_sudo() -> Result<()> {
 
 /// Install a package using the appropriate backend.
 pub fn install_package(backend: InstallBackend, package: &str) -> Result<()> {
-    let args = match backend {
-        InstallBackend::Pacman => vec!["-S", "--noconfirm", package],
-        InstallBackend::Paru => vec!["-S", "--noconfirm", package],
-        InstallBackend::Yay => vec!["-S", "--noconfirm", package],
-    };
+    let args = vec!["-S", "--noconfirm", package];
 
     let status = match backend {
         InstallBackend::Pacman => run_pacman(args)?,

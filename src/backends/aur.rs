@@ -166,7 +166,7 @@ pub fn fetch_pkgbuild(package: &str) -> Result<Option<String>> {
 
     let content = response.text().context("Failed to read PKGBUILD content")?;
 
-    if content.contains("404") || content.trim().is_empty() {
+    if content.trim().is_empty() {
         return Ok(None);
     }
 

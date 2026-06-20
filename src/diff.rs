@@ -44,7 +44,7 @@ pub fn run(cache: &Cache, package: &str) -> Result<()> {
     let cached_pkgbuild = get_cached_pkgbuild(cache, package)?;
 
     // Fetch current PKGBUILD (only works for AUR)
-    let current_pkgbuild = crate::backends::aur::fetch_pkgbuild(&pkg.name)?;
+    let current_pkgbuild = resolver::fetch_pkgbuild_for_package(&pkg)?;
 
     match (cached_pkgbuild, current_pkgbuild) {
         (Some(ref old), Some(ref new)) => {

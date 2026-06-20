@@ -1,10 +1,10 @@
 use anyhow::{bail, Context, Result};
-use std::io::{self, Write};
 
 use crate::{
     backends::install::{ensure_sudo, install_package, select_backend, update_databases},
     backends::{PackageInfo, PackageSource},
     cache::Cache,
+    prompt,
     resolver,
     trust::{self, analyze_pkgbuild_diff, cache_pkgbuild, diff_to_signals, get_cached_pkgbuild},
 };
@@ -31,6 +31,16 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
             pkg.source
         )
     })?;
+
+    // Dry run - just show what would happen (handle early before trust analysis)
+    if dry_run {
+        println!(
+            "\n[DRY RUN] Would install '{}' using {} backend",
+            package,
+            backend.cmd()
+        );
+        return Ok(());
+    }
 
     // Show trust analysis (unless forced)
     if !force {
@@ -65,30 +75,11 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
             );
         }
 
-        if dry_run {
-            println!(
-                "\n[DRY RUN] Would install '{}' using {} backend",
-                package,
-                backend.cmd()
-            );
-            return Ok(());
-        }
-
         // Prompt for confirmation
-        if !prompt_confirmation()? {
+        if !prompt::prompt_confirmation()? {
             println!("Aborted.");
             return Ok(());
         }
-    }
-
-    // Dry run - just show what would happen
-    if dry_run {
-        println!(
-            "\n[DRY RUN] Would install '{}' using {} backend",
-            package,
-            backend.cmd()
-        );
-        return Ok(());
     }
 
     // Update databases first
@@ -111,24 +102,5 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
 
 /// Fetch PKGBUILD for installation (from AUR or official source).
 fn fetch_pkgbuild_for_install(pkg: &PackageInfo) -> Result<Option<String>> {
-    match &pkg.source {
-        PackageSource::Aur => crate::backends::aur::fetch_pkgbuild(&pkg.name),
-        PackageSource::Official { .. } | PackageSource::ThirdParty => {
-            // For official packages, we could fetch from ABS but it's not available by default
-            Ok(None)
-        }
-        PackageSource::Unknown => Ok(None),
-    }
-}
-
-/// Prompt for user confirmation.
-fn prompt_confirmation() -> Result<bool> {
-    print!("Continue? [Y/n] ");
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    let choice = input.trim();
-
-    Ok(choice.is_empty() || choice.eq_ignore_ascii_case("y") || choice.eq_ignore_ascii_case("yes"))
+    resolver::fetch_pkgbuild_for_package(pkg)
 }
