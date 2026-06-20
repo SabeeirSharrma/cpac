@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::io::{self, IsTerminal, Write};
 
-use crate::{audit, display, resolver, trust, cache, config};
+use crate::{audit, display, resolver, trust, cache, config, install, remove, update, diff};
 
 const TAGLINE: &str = "A package trust layer for Arch-based Linux";
 
@@ -60,22 +60,42 @@ enum Commands {
         package: Option<String>,
     },
 
-    /// Install a package after trust analysis. Coming in v0.5.
+    /// Install a package after trust analysis.
     Install {
         /// Package name to install.
         package: String,
+
+        /// Skip trust analysis and confirmation prompt.
+        #[arg(long)]
+        force: bool,
+
+        /// Dry run - show what would be installed without actually installing.
+        #[arg(long)]
+        dry_run: bool,
     },
 
-    /// Remove a package. Coming later.
+    /// Remove a package.
     Remove {
         /// Package name to remove.
         package: String,
+
+        /// Also remove dependencies that are no longer needed.
+        #[arg(long)]
+        recursive: bool,
+
+        /// Skip confirmation prompt.
+        #[arg(long)]
+        force: bool,
     },
 
-    /// Update package metadata and sources. Coming later.
-    Update,
+    /// Update package metadata and sources.
+    Update {
+        /// Also update AUR packages if AUR is enabled.
+        #[arg(long)]
+        aur: bool,
+    },
 
-    /// Show PKGBUILD diff (local or crowdsourced). Coming in v0.4.
+    /// Show PKGBUILD diff (local or crowdsourced).
     Diff {
         /// Package name to diff.
         package: String,
@@ -135,17 +155,17 @@ pub fn run() -> Result<()> {
                 prompt_audit_details(&audit)?;
             }
         }
-        Commands::Install { package } => {
-            println!("cpac install {} is coming in v0.5", package);
+        Commands::Install { package, force, dry_run } => {
+            install::run(cache_ref()?, &package, force, dry_run)?;
         }
-        Commands::Remove { package } => {
-            println!("cpac remove {} is coming later", package);
+        Commands::Remove { package, recursive, force } => {
+            remove::run(cache_ref()?, &package, recursive, force)?;
         }
-        Commands::Update => {
-            println!("cpac update is coming later");
+        Commands::Update { aur } => {
+            update::run(cache_ref()?, aur)?;
         }
         Commands::Diff { package } => {
-            println!("cpac diff {} is coming in v0.4", package);
+            diff::run(cache_ref()?, &package)?;
         }
         Commands::Config => {
             println!("cpac config is coming in v0.5");

@@ -3,9 +3,13 @@ mod backends;
 mod cache;
 mod cli;
 mod config;
+mod diff;
 mod display;
+mod install;
+mod remove;
 mod resolver;
 mod trust;
+mod update;
 
 use anyhow::Result;
 

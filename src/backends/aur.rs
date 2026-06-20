@@ -1,16 +1,18 @@
 use anyhow::{Context, Result};
 use chrono::DateTime;
 use serde::Deserialize;
+use std::process::Command;
 
-use super::{PackageInfo, PackageSource};
+use super::{InstallBackend, PackageInfo, PackageSource};
 
-const AUR_RPC_URL: &str = "https://aur.archlinux.org/rpc/v5";
+const AUR_RPC_URL: &str = "https://aur.archlinux.org/rpc/";
 
 /// AUR RPC response envelope.
 #[derive(Debug, Deserialize)]
 struct AurResponse {
     #[serde(rename = "resultcount")]
     result_count: u32,
+    #[serde(default)]
     results: Vec<AurPackage>,
 }
 
@@ -76,10 +78,14 @@ impl AurPackage {
 
 /// Search AUR packages by keyword.
 pub fn search(query: &str) -> Result<Vec<PackageInfo>> {
-    let url = format!("{}/search/{}", AUR_RPC_URL, query);
-
-    let response: AurResponse = reqwest::blocking::get(&url)
+    let client = reqwest::blocking::Client::new();
+    let response: AurResponse = client
+        .get(AUR_RPC_URL)
+        .query(&[("v", "5"), ("type", "search"), ("arg", query)])
+        .send()
         .context("Failed to connect to AUR. Check your internet connection.")?
+        .error_for_status()
+        .context("AUR returned an error response")?
         .json()
         .context("Failed to parse AUR response")?;
 
@@ -99,10 +105,13 @@ pub fn info_multi(packages: &[&str]) -> Result<Vec<PackageInfo>> {
     }
 
     let client = reqwest::blocking::Client::new();
-    let query: Vec<(&str, &str)> = packages.iter().map(|pkg| ("arg[]", *pkg)).collect();
+    let mut query = vec![("v", "5"), ("type", "info")];
+    for package in packages {
+        query.push(("arg[]", *package));
+    }
 
     let response: AurResponse = client
-        .get(format!("{}/info", AUR_RPC_URL))
+        .get(AUR_RPC_URL)
         .query(&query)
         .send()
         .context("Failed to connect to AUR. Check your internet connection.")?
@@ -120,10 +129,14 @@ pub fn info_multi(packages: &[&str]) -> Result<Vec<PackageInfo>> {
 
 /// Get detailed info for a specific AUR package.
 pub fn info(package: &str) -> Result<Option<PackageInfo>> {
-    let url = format!("{}/info/{}", AUR_RPC_URL, package);
-
-    let response: AurResponse = reqwest::blocking::get(&url)
+    let client = reqwest::blocking::Client::new();
+    let response: AurResponse = client
+        .get(AUR_RPC_URL)
+        .query(&[("v", "5"), ("type", "info"), ("arg", package)])
+        .send()
         .context("Failed to connect to AUR. Check your internet connection.")?
+        .error_for_status()
+        .context("AUR returned an error response")?
         .json()
         .context("Failed to parse AUR response")?;
 
@@ -136,4 +149,63 @@ pub fn info(package: &str) -> Result<Option<PackageInfo>> {
         .into_iter()
         .next()
         .map(|p| p.into_package_info()))
+}
+
+/// Fetch the PKGBUILD content for an AUR package.
+pub fn fetch_pkgbuild(package: &str) -> Result<Option<String>> {
+    // AUR git repository URL pattern
+    let url = format!("https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h={}", package);
+
+    let response = reqwest::blocking::get(&url)
+        .context("Failed to connect to AUR for PKGBUILD")?;
+
+    if !response.status().is_success() {
+        return Ok(None);
+    }
+
+    let content = response.text()
+        .context("Failed to read PKGBUILD content")?;
+
+    if content.contains("404") || content.trim().is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(content))
+}
+
+/// Build the AUR package locally to get the built package info.
+/// This is used for installing AUR packages when we need to build from source.
+pub fn build_aur_package(package: &str, backend: InstallBackend) -> Result<()> {
+    // Clone the AUR git repo
+    let repo_url = format!("https://aur.archlinux.org/{}.git", package);
+    let temp_dir = std::env::temp_dir().join(format!("cpac-aur-{}", package));
+
+    // Clean up any existing directory
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    // Clone
+    let status = Command::new("git")
+        .args(["clone", "--depth", "1", &repo_url, temp_dir.to_str().unwrap()])
+        .status()
+        .context("Failed to clone AUR repository")?;
+
+    if !status.success() {
+        anyhow::bail!("Failed to clone AUR package: {}", package);
+    }
+
+    // Build and install using the selected backend
+    let status = Command::new(backend.cmd())
+        .current_dir(&temp_dir)
+        .args(["-S", "--noconfirm", "."])
+        .status()
+        .context("Failed to build AUR package")?;
+
+    if !status.success() {
+        anyhow::bail!("Failed to build AUR package: {}", package);
+    }
+
+    // Clean up
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    Ok(())
 }

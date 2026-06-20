@@ -1,9 +1,12 @@
 pub mod aur;
+pub mod install;
 pub mod pacman;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+pub use install::InstallBackend;
 
 /// The source repository a package comes from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

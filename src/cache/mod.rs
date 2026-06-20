@@ -85,6 +85,14 @@ impl Cache {
         self.pkgbuilds.insert(key, ivec)?;
         Ok(())
     }
+
+    /// Clear package metadata that depends on repository state.
+    pub fn clear_metadata(&self) -> Result<()> {
+        self.packages.clear()?;
+        self.trust.clear()?;
+        self.pkgbuilds.clear()?;
+        Ok(())
+    }
 }
 
 /// Remove the entire cache directory.
