@@ -75,15 +75,21 @@ pub fn print_trust_report(pkg: &PackageInfo, report: &TrustReport) {
 
     match pkg.popularity {
         Some(popularity) => println!("  {} {:.2}", "Popularity:".cyan().bold(), popularity),
-        None => println!("  {} {}", "Popularity:".cyan().bold(), "Unknown".dimmed()),
+        None => println!(
+            "  {} {}  {}",
+            "Popularity:".cyan().bold(),
+            "Unknown".dimmed(),
+            "(Reason: Metadata unavailable)".dimmed()
+        ),
     }
 
     match &pkg.install_size {
         Some(size) => println!("  {} {}", "Installed Size:".cyan().bold(), size),
         None => println!(
-            "  {} {}",
+            "  {} {}  {}",
             "Installed Size:".cyan().bold(),
-            "Unknown".dimmed()
+            "Unknown".dimmed(),
+            "(Reason: Metadata unavailable)".dimmed()
         ),
     }
 
@@ -94,7 +100,12 @@ pub fn print_trust_report(pkg: &PackageInfo, report: &TrustReport) {
             pkg.licenses.join(", ")
         );
     } else {
-        println!("  {} {}", "Licenses:".cyan().bold(), "Unknown".dimmed());
+        println!(
+            "  {} {}  {}",
+            "Licenses:".cyan().bold(),
+            "Unknown".dimmed(),
+            "(Reason: Metadata unavailable)".dimmed()
+        );
     }
 
     if !pkg.depends.is_empty() {

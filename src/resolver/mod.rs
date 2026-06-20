@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use crate::cache::Cache;
+use crate::config;
 
 use crate::backends::{self, PackageInfo, PackageSource};
 
@@ -16,9 +17,14 @@ pub fn search(cache: &Cache, query: &str) -> Result<Vec<PackageInfo>> {
 
     let mut by_name: HashMap<String, PackageInfo> = HashMap::new();
 
-    // AUR first, then pacman — pacman overwrites on name collision (preferred)
-    for pkg in backends::aur::search(query)? {
-        by_name.insert(pkg.name.clone(), pkg);
+    // Check if AUR is enabled
+    let aur_enabled = config::is_aur_enabled();
+
+    if aur_enabled {
+        // AUR first, then pacman — pacman overwrites on name collision (preferred)
+        for pkg in backends::aur::search(query)? {
+            by_name.insert(pkg.name.clone(), pkg);
+        }
     }
 
     for pkg in backends::pacman::search(query)? {
@@ -62,11 +68,14 @@ pub fn resolve(cache: &Cache, package: &str) -> Result<Option<PackageInfo>> {
         return Ok(Some(pkg));
     }
 
-    if let Some(pkg) = backends::aur::info(package)? {
-        if let Ok(serialized) = serde_json::to_vec(&pkg) {
-            let _ = cache.insert_packages(&cache_key, serialized);
+    let aur_enabled = config::is_aur_enabled();
+    if aur_enabled {
+        if let Some(pkg) = backends::aur::info(package)? {
+            if let Ok(serialized) = serde_json::to_vec(&pkg) {
+                let _ = cache.insert_packages(&cache_key, serialized);
+            }
+            return Ok(Some(pkg));
         }
-        return Ok(Some(pkg));
     }
 
     Ok(None)
