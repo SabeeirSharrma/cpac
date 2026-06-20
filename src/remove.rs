@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use std::io::{self, Write};
 
 use crate::{
-    backends::install::remove_package,
+    backends::install::{ensure_sudo, remove_package},
     cache::Cache,
     resolver,
     trust::analyze,
@@ -40,18 +40,8 @@ pub fn run(cache: &Cache, package: &str, recursive: bool, force: bool) -> Result
     // Dry run not implemented for remove yet, but could be added
 
     // Remove the package
-    if recursive {
-        let status = std::process::Command::new("pacman")
-            .args(["-Rs", "--noconfirm", package])
-            .status()
-            .context("Failed to run pacman -Rs")?;
-
-        if !status.success() {
-            bail!("pacman -Rs failed with exit code: {}", status);
-        }
-    } else {
-        remove_package(package)?;
-    }
+    ensure_sudo().context("Failed to request sudo credentials for package removal")?;
+    remove_package(package, recursive)?;
 
     println!("Successfully removed '{}'", package);
     Ok(())

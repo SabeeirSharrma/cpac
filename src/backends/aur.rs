@@ -153,17 +153,18 @@ pub fn info(package: &str) -> Result<Option<PackageInfo>> {
 /// Fetch the PKGBUILD content for an AUR package.
 pub fn fetch_pkgbuild(package: &str) -> Result<Option<String>> {
     // AUR git repository URL pattern
-    let url = format!("https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h={}", package);
+    let url = format!(
+        "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h={}",
+        package
+    );
 
-    let response = reqwest::blocking::get(&url)
-        .context("Failed to connect to AUR for PKGBUILD")?;
+    let response = reqwest::blocking::get(&url).context("Failed to connect to AUR for PKGBUILD")?;
 
     if !response.status().is_success() {
         return Ok(None);
     }
 
-    let content = response.text()
-        .context("Failed to read PKGBUILD content")?;
+    let content = response.text().context("Failed to read PKGBUILD content")?;
 
     if content.contains("404") || content.trim().is_empty() {
         return Ok(None);

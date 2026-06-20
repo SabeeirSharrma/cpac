@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::{
-    backends::install::update_databases,
+    backends::install::{ensure_sudo, update_databases},
     cache::Cache,
     config,
 };
@@ -11,6 +11,7 @@ use crate::{
 pub fn run(cache: &Cache, update_aur: bool) -> Result<()> {
     // Update official repositories
     println!("Updating official package databases...");
+    ensure_sudo().context("Failed to request sudo credentials for package update")?;
     update_databases().context("Failed to update official package databases")?;
 
     // Update AUR if requested and enabled

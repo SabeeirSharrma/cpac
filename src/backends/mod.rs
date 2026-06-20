@@ -71,7 +71,9 @@ pub fn is_official_arch_repo(repo: &str) -> bool {
 /// Classify a repository into the appropriate PackageSource.
 pub fn classify_repo(repo: &str) -> PackageSource {
     if is_official_arch_repo(repo) {
-        PackageSource::Official { repo: repo.to_string() }
+        PackageSource::Official {
+            repo: repo.to_string(),
+        }
     } else {
         PackageSource::ThirdParty
     }

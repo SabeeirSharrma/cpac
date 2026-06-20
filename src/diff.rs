@@ -11,7 +11,10 @@ use crate::{
 pub fn run(cache: &Cache, package: &str) -> Result<()> {
     // Resolve the package
     let Some(pkg) = resolver::resolve(cache, package)? else {
-        bail!("Package '{}' not found in official repositories or AUR", package);
+        bail!(
+            "Package '{}' not found in official repositories or AUR",
+            package
+        );
     };
 
     // Check if PKGBUILD diff is supported for this package source
@@ -49,15 +52,25 @@ pub fn run(cache: &Cache, package: &str) -> Result<()> {
             print_diff(&diff, package);
         }
         (None, Some(ref new)) => {
-            println!("No cached PKGBUILD found for '{}'. Showing current PKGBUILD from {}:\n", package, source_desc);
+            println!(
+                "No cached PKGBUILD found for '{}'. Showing current PKGBUILD from {}:\n",
+                package, source_desc
+            );
             println!("{}", new);
         }
         (Some(ref old), None) => {
-            println!("Cached PKGBUILD for '{}', but unable to fetch current version from {}:\n", package, source_desc);
+            println!(
+                "Cached PKGBUILD for '{}', but unable to fetch current version from {}:\n",
+                package, source_desc
+            );
             println!("{}", old);
         }
         (None, None) => {
-            bail!("No cached PKGBUILD found and unable to fetch current PKGBUILD from {} for '{}'", source_desc, package);
+            bail!(
+                "No cached PKGBUILD found and unable to fetch current PKGBUILD from {} for '{}'",
+                source_desc,
+                package
+            );
         }
     }
 

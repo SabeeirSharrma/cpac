@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::process::Command;
 
-use super::{PackageInfo, PackageSource, classify_repo};
+use super::{classify_repo, PackageInfo, PackageSource};
 
 /// Search official repositories via `pacman -Ss`.
 pub fn search(query: &str) -> Result<Vec<PackageInfo>> {

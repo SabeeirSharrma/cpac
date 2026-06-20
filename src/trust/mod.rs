@@ -114,9 +114,9 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         age_unknown = true;
         let pts = match &pkg.source {
             PackageSource::Official { .. } => 13,
-            PackageSource::ThirdParty => 8,  // Partial credit - metadata not tracked by distro repos
-            PackageSource::Aur => 5,         // Partial credit - AUR doesn't always track age
-            PackageSource::Unknown => 5,     // Neutral default
+            PackageSource::ThirdParty => 8, // Partial credit - metadata not tracked by distro repos
+            PackageSource::Aur => 5,        // Partial credit - AUR doesn't always track age
+            PackageSource::Unknown => 5,    // Neutral default
         };
         signals.push(TrustSignal {
             name: "Package Age".to_string(),
@@ -262,8 +262,11 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         maintainer_unknown,
         pop_unknown,
         recency_unknown,
-    ].iter().filter(|&&x| x).count();
-    
+    ]
+    .iter()
+    .filter(|&&x| x)
+    .count();
+
     let negative_signals = signals.iter().filter(|s| s.points < 0).count();
 
     // Clamp to 0..100
@@ -276,7 +279,7 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         match score {
             60..=100 => "Safe",
             40..=59 => "Moderate",
-            _ => "Moderate",  // Floor at Moderate when only missing metadata
+            _ => "Moderate", // Floor at Moderate when only missing metadata
         }
     } else {
         recommendation(score)
@@ -462,17 +465,26 @@ fn check_suspicious_pattern(line: &str, patterns: &mut Vec<String>) {
     let lower = line.to_lowercase();
 
     // Remote code execution patterns
-    if lower.contains("curl") && (lower.contains("| sh") || lower.contains("| bash") || lower.contains("| zsh")) {
+    if lower.contains("curl")
+        && (lower.contains("| sh") || lower.contains("| bash") || lower.contains("| zsh"))
+    {
         patterns.push(format!("Remote script execution: {}", line));
     }
-    if lower.contains("wget") && (lower.contains("| sh") || lower.contains("| bash") || lower.contains("| zsh")) {
+    if lower.contains("wget")
+        && (lower.contains("| sh") || lower.contains("| bash") || lower.contains("| zsh"))
+    {
         patterns.push(format!("Remote script execution: {}", line));
     }
 
     // Suspicious network calls
-    if lower.contains("curl") || lower.contains("wget") || lower.contains("nc ") || lower.contains("netcat") {
+    if lower.contains("curl")
+        || lower.contains("wget")
+        || lower.contains("nc ")
+        || lower.contains("netcat")
+    {
         if lower.contains("http://") || lower.contains("https://") {
-            if !lower.contains("pkgdesc") && !lower.contains("url=") && !lower.contains("source=(") {
+            if !lower.contains("pkgdesc") && !lower.contains("url=") && !lower.contains("source=(")
+            {
                 patterns.push(format!("Unexpected network call: {}", line));
             }
         }
@@ -499,24 +511,39 @@ fn check_suspicious_pattern(line: &str, patterns: &mut Vec<String>) {
     }
 
     // Suspicious variable assignments
-    if lower.contains("pkgver=") && (lower.contains("curl") || lower.contains("wget") || lower.contains("git")) {
+    if lower.contains("pkgver=")
+        && (lower.contains("curl") || lower.contains("wget") || lower.contains("git"))
+    {
         patterns.push(format!("Dynamic pkgver from network: {}", line));
     }
 
     // New external dependencies not in depends array
-    if lower.contains("depends=(") || lower.contains("makedepends=(") || lower.contains("optdepends=(") {
+    if lower.contains("depends=(")
+        || lower.contains("makedepends=(")
+        || lower.contains("optdepends=(")
+    {
         // This is normal, but could be flagged if unexpected
     }
 
     // Pip/npm/cargo install in build
-    if lower.contains("pip install") || lower.contains("npm install") || lower.contains("cargo install") {
+    if lower.contains("pip install")
+        || lower.contains("npm install")
+        || lower.contains("cargo install")
+    {
         if !lower.contains("cargo build") && !lower.contains("cargo test") {
-            patterns.push(format!("Language package manager install in build: {}", line));
+            patterns.push(format!(
+                "Language package manager install in build: {}",
+                line
+            ));
         }
     }
 
     // Modifying system files outside pkgdir
-    if lower.contains("/etc/") || lower.contains("/usr/") || lower.contains("/bin/") || lower.contains("/sbin/") {
+    if lower.contains("/etc/")
+        || lower.contains("/usr/")
+        || lower.contains("/bin/")
+        || lower.contains("/sbin/")
+    {
         if !lower.contains("pkgdir") && !lower.contains("install=") {
             patterns.push(format!("Modifies system paths outside pkgdir: {}", line));
         }
@@ -540,7 +567,10 @@ pub fn diff_to_signals(diff: &PkgbuildDiff) -> Vec<TrustSignal> {
             name: "Build Script Changes".to_string(),
             points: penalty,
             max_points: 0,
-            detail: format!("{} suspicious change(s) detected", diff.suspicious_patterns.len()),
+            detail: format!(
+                "{} suspicious change(s) detected",
+                diff.suspicious_patterns.len()
+            ),
         });
 
         for pattern in &diff.suspicious_patterns {
@@ -559,7 +589,8 @@ pub fn diff_to_signals(diff: &PkgbuildDiff) -> Vec<TrustSignal> {
 /// Get cached PKGBUILD for a package (for upgrade diffing).
 pub fn get_cached_pkgbuild(cache: &Cache, package: &str) -> Result<Option<String>> {
     let key = format!("pkgbuild:{}", package);
-    Ok(cache.get_pkgbuilds(&key)?
+    Ok(cache
+        .get_pkgbuilds(&key)?
         .map(|bytes| String::from_utf8_lossy(&bytes).to_string()))
 }
 
@@ -578,9 +609,7 @@ mod tests {
 
     fn test_cache() -> &'static Cache {
         static CACHE: OnceLock<Cache> = OnceLock::new();
-        CACHE.get_or_init(|| {
-            cache::init(None).expect("Failed to initialize test cache")
-        })
+        CACHE.get_or_init(|| cache::init(None).expect("Failed to initialize test cache"))
     }
 
     fn make_third_party_pkg(name: &str) -> PackageInfo {
@@ -589,7 +618,7 @@ mod tests {
             version: "1.0.0".to_string(),
             description: "Test package".to_string(),
             source: ThirdParty,
-            maintainer: None,  // No maintainer to test unknown metadata
+            maintainer: None, // No maintainer to test unknown metadata
             votes: None,
             popularity: None,
             first_submitted: None,
@@ -620,20 +649,27 @@ mod tests {
         assert_eq!(negative_signals, 0, "Should have no negative signals");
 
         // Verify unknown metadata signals are marked correctly
-        let unknown_signals = report.signals.iter()
+        let unknown_signals = report
+            .signals
+            .iter()
             .filter(|s| s.detail == "Metadata unavailable")
             .count();
-        assert_eq!(unknown_signals, 4, "Should have 4 signals with 'Metadata unavailable'");
+        assert_eq!(
+            unknown_signals, 4,
+            "Should have 4 signals with 'Metadata unavailable'"
+        );
     }
 
     #[test]
     fn official_package_with_unknown_metadata_stays_safe() {
         // Official packages should still get SAFE with unknown metadata
         let mut pkg = make_third_party_pkg("official-test");
-        pkg.source = Official { repo: "core".to_string() };
+        pkg.source = Official {
+            repo: "core".to_string(),
+        };
         // Official packages always have maintainers in reality
         pkg.maintainer = Some("Official Maintainer <official@archlinux.org>".to_string());
-        
+
         let cache = test_cache();
         let report = analyze(cache, &pkg);
 
@@ -647,15 +683,21 @@ mod tests {
         // Package with actual negative signal (orphaned) should be penalized
         let mut pkg = make_third_party_pkg("orphaned-package");
         pkg.orphan = true;
-        
+
         let cache = test_cache();
         let report = analyze(cache, &pkg);
 
         // Should have negative signal from orphaned status
         let negative_signals = report.signals.iter().filter(|s| s.points < 0).count();
-        assert!(negative_signals > 0, "Should have negative signals for orphaned package");
-        
+        assert!(
+            negative_signals > 0,
+            "Should have negative signals for orphaned package"
+        );
+
         // Recommendation should not floor at Moderate when there are actual negative signals
-        assert_ne!(report.recommendation, "Moderate", "Should not floor at Moderate with negative signals");
+        assert_ne!(
+            report.recommendation, "Moderate",
+            "Should not floor at Moderate with negative signals"
+        );
     }
 }

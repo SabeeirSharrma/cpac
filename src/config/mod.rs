@@ -10,9 +10,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self {
-            aur_enabled: false,
-        }
+        Self { aur_enabled: false }
     }
 }
 

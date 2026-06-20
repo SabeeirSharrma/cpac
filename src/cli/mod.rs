@@ -2,14 +2,13 @@ use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::io::{self, IsTerminal, Write};
 
-use crate::{audit, display, resolver, trust, cache, config, install, remove, update, diff};
+use crate::{audit, cache, config, diff, display, install, remove, resolver, trust, update};
 
 const TAGLINE: &str = "A package trust layer for Arch-based Linux";
 
 fn cache_ref() -> Result<&'static cache::Cache> {
-    static CACHE: once_cell::sync::Lazy<cache::Cache> = once_cell::sync::Lazy::new(|| {
-        cache::init(None).expect("Failed to initialize cache")
-    });
+    static CACHE: once_cell::sync::Lazy<cache::Cache> =
+        once_cell::sync::Lazy::new(|| cache::init(None).expect("Failed to initialize cache"));
     Ok(&CACHE)
 }
 
@@ -155,10 +154,18 @@ pub fn run() -> Result<()> {
                 prompt_audit_details(&audit)?;
             }
         }
-        Commands::Install { package, force, dry_run } => {
+        Commands::Install {
+            package,
+            force,
+            dry_run,
+        } => {
             install::run(cache_ref()?, &package, force, dry_run)?;
         }
-        Commands::Remove { package, recursive, force } => {
+        Commands::Remove {
+            package,
+            recursive,
+            force,
+        } => {
             remove::run(cache_ref()?, &package, recursive, force)?;
         }
         Commands::Update { aur } => {

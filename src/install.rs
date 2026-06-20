@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use std::io::{self, Write};
 
 use crate::{
-    backends::install::{install_package, select_backend, update_databases},
+    backends::install::{ensure_sudo, install_package, select_backend, update_databases},
     backends::{PackageInfo, PackageSource},
     cache::Cache,
     resolver,
@@ -13,7 +13,10 @@ use crate::{
 pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<()> {
     // Resolve the package
     let Some(pkg) = resolver::resolve(cache, package)? else {
-        bail!("Package '{}' not found in official repositories or AUR", package);
+        bail!(
+            "Package '{}' not found in official repositories or AUR",
+            package
+        );
     };
 
     // Check if AUR is enabled for AUR packages
@@ -23,7 +26,10 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
 
     // Select backend
     let backend = select_backend(&pkg.source).ok_or_else(|| {
-        anyhow::anyhow!("No suitable backend found for package source: {:?}", pkg.source)
+        anyhow::anyhow!(
+            "No suitable backend found for package source: {:?}",
+            pkg.source
+        )
     })?;
 
     // Show trust analysis (unless forced)
@@ -53,11 +59,18 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
 
         // Check if package is already installed
         if resolver::is_installed(package)? {
-            println!("\nPackage '{}' is already installed. This will be an upgrade.", package);
+            println!(
+                "\nPackage '{}' is already installed. This will be an upgrade.",
+                package
+            );
         }
 
         if dry_run {
-            println!("\n[DRY RUN] Would install '{}' using {} backend", package, backend.cmd());
+            println!(
+                "\n[DRY RUN] Would install '{}' using {} backend",
+                package,
+                backend.cmd()
+            );
             return Ok(());
         }
 
@@ -70,12 +83,17 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
 
     // Dry run - just show what would happen
     if dry_run {
-        println!("\n[DRY RUN] Would install '{}' using {} backend", package, backend.cmd());
+        println!(
+            "\n[DRY RUN] Would install '{}' using {} backend",
+            package,
+            backend.cmd()
+        );
         return Ok(());
     }
 
     // Update databases first
     println!("Updating package databases...");
+    ensure_sudo().context("Failed to request sudo credentials for package installation")?;
     update_databases().context("Failed to update package databases")?;
 
     // Install the package

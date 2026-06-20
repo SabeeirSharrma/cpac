@@ -1,14 +1,14 @@
 use anyhow::Result;
 use dirs;
-use sled::{Db, IVec, open};
+use sled::{open, Db, IVec};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Initialize the cache directory and open sled databases.
 pub fn init(cache_dir: Option<&Path>) -> Result<Cache> {
-    let home_dir = dirs::home_dir()
-        .ok_or_else(|| anyhow::anyhow!("Could not get home directory"))?;
-    
+    let home_dir =
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not get home directory"))?;
+
     let dir = if let Some(dir) = cache_dir {
         dir.to_path_buf()
     } else {
@@ -42,10 +42,7 @@ pub struct Cache {
 impl Cache {
     /// Simple getter/setter wrappers for demonstration.
     pub fn get_packages<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
-        Ok(self
-            .packages
-            .get(key)?
-            .map(|ivec| ivec.to_vec()))
+        Ok(self.packages.get(key)?.map(|ivec| ivec.to_vec()))
     }
     pub fn insert_packages<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> Result<()> {
         let ivec = IVec::from(value.as_ref());
@@ -53,10 +50,7 @@ impl Cache {
         Ok(())
     }
     pub fn get_trust<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
-        Ok(self
-            .trust
-            .get(key)?
-            .map(|ivec| ivec.to_vec()))
+        Ok(self.trust.get(key)?.map(|ivec| ivec.to_vec()))
     }
     pub fn insert_trust<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> Result<()> {
         let ivec = IVec::from(value.as_ref());
@@ -64,21 +58,19 @@ impl Cache {
         Ok(())
     }
     pub fn get_advisories<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
-        Ok(self
-            .advisories
-            .get(key)?
-            .map(|ivec| ivec.to_vec()))
+        Ok(self.advisories.get(key)?.map(|ivec| ivec.to_vec()))
     }
-    pub fn insert_advisories<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> Result<()> {
+    pub fn insert_advisories<K: AsRef<[u8]>, V: AsRef<[u8]>>(
+        &self,
+        key: K,
+        value: V,
+    ) -> Result<()> {
         let ivec = IVec::from(value.as_ref());
         self.advisories.insert(key, ivec)?;
         Ok(())
     }
     pub fn get_pkgbuilds<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
-        Ok(self
-            .pkgbuilds
-            .get(key)?
-            .map(|ivec| ivec.to_vec()))
+        Ok(self.pkgbuilds.get(key)?.map(|ivec| ivec.to_vec()))
     }
     pub fn insert_pkgbuilds<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, key: K, value: V) -> Result<()> {
         let ivec = IVec::from(value.as_ref());

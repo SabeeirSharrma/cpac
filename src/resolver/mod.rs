@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
 use crate::cache::Cache;
 use crate::config;
+use anyhow::Result;
 
 use crate::backends::{self, PackageInfo, PackageSource};
 

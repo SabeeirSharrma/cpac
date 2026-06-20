@@ -14,6 +14,8 @@ Version 0.5 introduces the core package management commands: `cpac install`, `cp
 
 - **Trust analysis first**: Shows full trust report before prompting for installation
 - **AUR support**: Uses `paru` (preferred) or `yay` for AUR packages, `pacman` for official repos
+- **Sudo preflight**: Requests sudo credentials before privileged install steps so `pacman` operations can run without mid-command permission failures
+- **AUR behavior**: Leaves `paru`/`yay` unwrapped, but primes sudo first so helpers can still complete package installation when they invoke `pacman`
 - **PKGBUILD diffing on upgrades**: Caches PKGBUILDs after install; on upgrade, diffs new vs cached PKGBUILD and flags suspicious patterns (remote code execution, obfuscation, system path modifications, etc.)
 - **Trust score adjustment**: Suspicious patterns add negative trust signals, lowering score
 - **Flags**:
@@ -25,6 +27,7 @@ Version 0.5 introduces the core package management commands: `cpac install`, `cp
 
 - **Trust analysis before removal**: Shows trust report to inform user
 - **Recursive removal**: `--recursive` flag removes unneeded dependencies (`pacman -Rs`)
+- **Sudo preflight**: Requests sudo credentials before removal, including recursive removal
 - **Force flag**: `--force` skips confirmation prompt
 - **Safety**: Won't remove packages that aren't installed
 
@@ -32,6 +35,7 @@ Version 0.5 introduces the core package management commands: `cpac install`, `cp
 
 - **Official databases**: Runs `pacman -Sy` to refresh official repositories
 - **AUR databases**: Optional `--aur` flag runs `paru -Sy` or `yay -Sy` (prefers paru)
+- **Sudo preflight**: Requests sudo credentials before syncing official package databases
 - **AUR gating**: Only updates AUR if enabled via `cpac aur enable`
 
 #### `cpac diff <package>`
