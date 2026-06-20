@@ -11,7 +11,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            aur_enabled: true,
+            aur_enabled: false,
         }
     }
 }
@@ -43,11 +43,11 @@ pub fn save(config: &Config) -> Result<()> {
 }
 
 pub fn set_aur_enabled(enabled: bool) -> Result<()> {
-    let mut config = load()?;
+    let mut config = load().unwrap_or_default();
     config.aur_enabled = enabled;
     save(&config)
 }
 
 pub fn is_aur_enabled() -> bool {
-    load().map(|c| c.aur_enabled).unwrap_or(true)
+    load().map(|c| c.aur_enabled).unwrap_or(false)
 }

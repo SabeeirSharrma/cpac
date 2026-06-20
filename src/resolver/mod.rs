@@ -8,17 +8,25 @@ use crate::backends::{self, PackageInfo, PackageSource};
 
 /// Search official repositories and AUR, ranked by relevance then source.
 pub fn search(cache: &Cache, query: &str) -> Result<Vec<PackageInfo>> {
+    // Check if AUR is enabled BEFORE any cache lookups
+    let aur_enabled = config::is_aur_enabled();
+
     let cache_key = format!("search:{query}");
     if let Some(cached) = cache.get_packages(&cache_key)? {
         if let Ok(pkgs) = serde_json::from_slice::<Vec<PackageInfo>>(&cached) {
+            // Filter out AUR packages if AUR is disabled
+            if !aur_enabled {
+                let filtered: Vec<PackageInfo> = pkgs
+                    .into_iter()
+                    .filter(|p| !matches!(p.source, PackageSource::Aur))
+                    .collect();
+                return Ok(filtered);
+            }
             return Ok(pkgs);
         }
     }
 
     let mut by_name: HashMap<String, PackageInfo> = HashMap::new();
-
-    // Check if AUR is enabled
-    let aur_enabled = config::is_aur_enabled();
 
     if aur_enabled {
         // AUR first, then pacman — pacman overwrites on name collision (preferred)
@@ -54,10 +62,18 @@ pub fn search(cache: &Cache, query: &str) -> Result<Vec<PackageInfo>> {
 
 /// Resolve one package, using official repositories before falling back to AUR.
 pub fn resolve(cache: &Cache, package: &str) -> Result<Option<PackageInfo>> {
+    // Check if AUR is enabled BEFORE any cache lookups
+    let aur_enabled = config::is_aur_enabled();
+
     let cache_key = format!("info:{package}");
     if let Some(cached) = cache.get_packages(&cache_key)? {
         if let Ok(pkg) = serde_json::from_slice::<PackageInfo>(&cached) {
-            return Ok(Some(pkg));
+            // Skip cached AUR packages if AUR is disabled
+            if !aur_enabled && matches!(pkg.source, PackageSource::Aur) {
+                // Fall through to re-resolve from official sources only
+            } else {
+                return Ok(Some(pkg));
+            }
         }
     }
 
@@ -68,7 +84,6 @@ pub fn resolve(cache: &Cache, package: &str) -> Result<Option<PackageInfo>> {
         return Ok(Some(pkg));
     }
 
-    let aur_enabled = config::is_aur_enabled();
     if aur_enabled {
         if let Some(pkg) = backends::aur::info(package)? {
             if let Ok(serialized) = serde_json::to_vec(&pkg) {
