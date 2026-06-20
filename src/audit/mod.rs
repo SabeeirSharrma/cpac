@@ -4,7 +4,7 @@ use anyhow::Result;
 use crate::cache::Cache;
 
 use crate::{
-    backends::{aur, pacman, PackageInfo, PackageSource},
+    backends::{aur, pacman, PackageInfo, PackageSource, classify_repo},
     trust::{self, TrustReport, TrustTier},
 };
 
@@ -138,11 +138,7 @@ fn hydrate_package(
     aur_map: &HashMap<String, PackageInfo>,
 ) -> PackageInfo {
     if let Some(repo) = repo_map.get(&pkg.name) {
-        pkg.source = if is_official_repo(repo) {
-            PackageSource::Official { repo: repo.clone() }
-        } else {
-            PackageSource::ThirdParty
-        };
+        pkg.source = classify_repo(repo);
         return pkg;
     }
 
@@ -191,25 +187,6 @@ fn warning_reason(report: &TrustReport) -> String {
         .map(|signal| format!("{}: {}", signal.name, signal.detail))
         .collect::<Vec<_>>()
         .join(" | ")
-}
-
-fn is_official_repo(repo: &str) -> bool {
-    matches!(
-        repo,
-        "core"
-            | "extra"
-            | "multilib"
-            | "testing"
-            | "core-testing"
-            | "extra-testing"
-            | "multilib-testing"
-            | "community"
-            | "community-testing"
-            | "endeavouros"
-            | "garuda"
-            | "manjaro"
-            | "cinderos"
-    ) || repo.starts_with("cachyos")
 }
 
 fn is_distro_specific_repo(repo: &str) -> bool {
@@ -270,16 +247,27 @@ mod tests {
     }
 
     #[test]
-    fn distro_owned_repos_are_treated_as_official() {
-        assert!(is_official_repo("endeavouros"));
-        assert!(is_official_repo("cachyos"));
-        assert!(is_official_repo("cachyos-v3"));
+    fn official_arch_repos_are_official() {
+        assert!(matches!(classify_repo("core"), PackageSource::Official { .. }));
+        assert!(matches!(classify_repo("extra"), PackageSource::Official { .. }));
+        assert!(matches!(classify_repo("multilib"), PackageSource::Official { .. }));
+        assert!(matches!(classify_repo("testing"), PackageSource::Official { .. }));
+        assert!(matches!(classify_repo("community"), PackageSource::Official { .. }));
     }
 
     #[test]
-    fn third_party_repos_are_not_misclassified() {
-        assert!(!is_official_repo("chaotic-aur"));
-        assert!(!is_official_repo("blackarch"));
+    fn distro_specific_repos_are_third_party() {
+        assert!(matches!(classify_repo("endeavouros"), PackageSource::ThirdParty));
+        assert!(matches!(classify_repo("cachyos"), PackageSource::ThirdParty));
+        assert!(matches!(classify_repo("cachyos-v3"), PackageSource::ThirdParty));
+        assert!(matches!(classify_repo("garuda"), PackageSource::ThirdParty));
+        assert!(matches!(classify_repo("manjaro"), PackageSource::ThirdParty));
+    }
+
+    #[test]
+    fn other_third_party_repos_are_third_party() {
+        assert!(matches!(classify_repo("chaotic-aur"), PackageSource::ThirdParty));
+        assert!(matches!(classify_repo("blackarch"), PackageSource::ThirdParty));
     }
 
     #[test]

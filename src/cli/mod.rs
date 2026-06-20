@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::io::{self, IsTerminal, Write};
 
-use crate::{audit, display, resolver, trust, cache};
+use crate::{audit, display, resolver, trust, cache, config};
 
 const TAGLINE: &str = "A package trust layer for Arch-based Linux";
 
@@ -151,8 +151,14 @@ pub fn run() -> Result<()> {
             println!("cpac config is coming in v0.5");
         }
         Commands::Aur { action } => match action {
-            AurAction::Enable => println!("cpac aur enable is coming in v0.4"),
-            AurAction::Disable => println!("cpac aur disable is coming in v0.4"),
+            AurAction::Enable => {
+                config::set_aur_enabled(true)?;
+                println!("AUR support enabled.");
+            }
+            AurAction::Disable => {
+                config::set_aur_enabled(false)?;
+                println!("AUR support disabled.");
+            }
         },
         Commands::ClearCache => {
             cache::clear_cache()?;
