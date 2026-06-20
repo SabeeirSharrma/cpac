@@ -45,3 +45,30 @@ pub struct PackageInfo {
     pub depends: Vec<String>,
     pub install_size: Option<String>,
 }
+
+/// Official Arch Linux repository names.
+const OFFICIAL_ARCH_REPOS: &[&str] = &[
+    "core",
+    "extra",
+    "multilib",
+    "testing",
+    "core-testing",
+    "extra-testing",
+    "multilib-testing",
+    "community",
+    "community-testing",
+];
+
+/// Check if a repository is an official Arch Linux repository.
+pub fn is_official_arch_repo(repo: &str) -> bool {
+    OFFICIAL_ARCH_REPOS.contains(&repo)
+}
+
+/// Classify a repository into the appropriate PackageSource.
+pub fn classify_repo(repo: &str) -> PackageSource {
+    if is_official_arch_repo(repo) {
+        PackageSource::Official { repo: repo.to_string() }
+    } else {
+        PackageSource::ThirdParty
+    }
+}
