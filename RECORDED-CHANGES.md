@@ -2,7 +2,7 @@
 
 ## Overview
 
-Version 0.5 introduces the core package management commands: `cpac install`, `cpac remove`, `cpac update`, and `cpac diff`. These commands integrate trust analysis with actual package operations, providing a complete workflow from trust evaluation to installation.
+Version 0.5 introduces the core package management commands: `cpac install`, `cpac remove`, `cpac update`, `cpac diff`, and `cpac config`. These commands integrate trust analysis with actual package operations, providing a complete workflow from trust evaluation to installation.
 
 ---
 
@@ -44,6 +44,16 @@ Version 0.5 introduces the core package management commands: `cpac install`, `cp
 - **Suspicious pattern detection**: Flags remote script execution, obfuscation, system path modifications, etc.
 - **AUR support**: Fetches current PKGBUILD from AUR git repository
 - **Upgrade awareness**: Shows what changed since last CPAC install
+
+### `cpac config`
+
+- **View current settings**: Shows AUR support status and crowdsourced data submission level
+- **Interactive consent management**: Choose submission level for crowdsourced PKGBUILD data
+  - `[1]` No submission — don't send anything
+  - `[2]` Hash/signature only (default)
+  - `[3]` Full PKGBUILD — helps with better diff accuracy
+- **Stored locally**: Consent choice persists in `~/.cpac/config.toml`
+- **Safe default**: Pressing Enter with no input preserves the current setting
 
 ---
 
@@ -122,10 +132,27 @@ $ cpac remove firefox --force
 # Shows trust report, then removes with pacman -R
 ```
 
+### Config Command
+
+```bash
+$ cpac config
+Current configuration:
+  AUR support:        enabled
+  Crowdsourced data:  Hash/signature only
+
+Crowdsourced data submission
+  [1] No, don't submit anything
+  [2] Yes, hash/signature only  (default)
+  [3] Yes, full PKGBUILD
+
+Choice (Default: 2): 3
+Crowdsourced submission set to: Full PKGBUILD
+```
+
 ### All Tests Pass
 
-- 6/6 unit tests passing (repo classification, trust scoring, audit logic)
-- Cargo check clean (only expected warnings about unused placeholder cache fields)
+- 9/9 unit tests passing (repo classification, trust scoring, audit logic)
+- `cargo clippy` clean (only expected warnings about unused placeholder cache fields)
 
 ---
 
@@ -144,4 +171,5 @@ $ cpac remove firefox --force
 - `src/remove.rs` — new remove command implementation (shared prompt)
 - `src/update.rs` — new update command implementation (auto AUR update when enabled)
 - `src/diff.rs` — new diff command implementation (uses shared PKGBUILD fetch)
+- `src/config/mod.rs` — added `ConsentLevel` enum, `consent` field, Display/Serialize support
 - `src/cli/mod.rs` — updated command definitions and imports

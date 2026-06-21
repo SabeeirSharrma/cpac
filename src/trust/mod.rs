@@ -477,17 +477,16 @@ fn check_suspicious_pattern(line: &str, patterns: &mut Vec<String>) {
     }
 
     // Suspicious network calls
-    if lower.contains("curl")
+    if (lower.contains("curl")
         || lower.contains("wget")
         || lower.contains("nc ")
-        || lower.contains("netcat")
+        || lower.contains("netcat"))
+        && (lower.contains("http://") || lower.contains("https://"))
+        && !lower.contains("pkgdesc")
+        && !lower.contains("url=")
+        && !lower.contains("source=(")
     {
-        if lower.contains("http://") || lower.contains("https://") {
-            if !lower.contains("pkgdesc") && !lower.contains("url=") && !lower.contains("source=(")
-            {
-                patterns.push(format!("Unexpected network call: {}", line));
-            }
-        }
+        patterns.push(format!("Unexpected network call: {}", line));
     }
 
     // Inline script execution
@@ -496,10 +495,12 @@ fn check_suspicious_pattern(line: &str, patterns: &mut Vec<String>) {
     }
 
     // Suspicious file operations
-    if lower.contains("rm -rf") || lower.contains("rm -f") {
-        if lower.contains("/") && !lower.contains("pkgdir") && !lower.contains("srcdir") {
-            patterns.push(format!("Aggressive file deletion: {}", line));
-        }
+    if (lower.contains("rm -rf") || lower.contains("rm -f"))
+        && lower.contains("/")
+        && !lower.contains("pkgdir")
+        && !lower.contains("srcdir")
+    {
+        patterns.push(format!("Aggressive file deletion: {}", line));
     }
 
     // Encoding/obfuscation
@@ -518,27 +519,27 @@ fn check_suspicious_pattern(line: &str, patterns: &mut Vec<String>) {
     }
 
     // Pip/npm/cargo install in build
-    if lower.contains("pip install")
+    if (lower.contains("pip install")
         || lower.contains("npm install")
-        || lower.contains("cargo install")
+        || lower.contains("cargo install"))
+        && !lower.contains("cargo build")
+        && !lower.contains("cargo test")
     {
-        if !lower.contains("cargo build") && !lower.contains("cargo test") {
-            patterns.push(format!(
-                "Language package manager install in build: {}",
-                line
-            ));
-        }
+        patterns.push(format!(
+            "Language package manager install in build: {}",
+            line
+        ));
     }
 
     // Modifying system files outside pkgdir
-    if lower.contains("/etc/")
+    if (lower.contains("/etc/")
         || lower.contains("/usr/")
         || lower.contains("/bin/")
-        || lower.contains("/sbin/")
+        || lower.contains("/sbin/"))
+        && !lower.contains("pkgdir")
+        && !lower.contains("install=")
     {
-        if !lower.contains("pkgdir") && !lower.contains("install=") {
-            patterns.push(format!("Modifies system paths outside pkgdir: {}", line));
-        }
+        patterns.push(format!("Modifies system paths outside pkgdir: {}", line));
     }
 }
 

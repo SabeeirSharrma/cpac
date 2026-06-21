@@ -61,15 +61,13 @@ Currently implemented commands:
 cpac search <query>
 cpac trust <package>
 cpac audit [package]
-```
-
-Commands that are available as placeholders but not implemented yet:
-
-```bash
 cpac install <package>
 cpac remove <package>
-cpac update
+cpac update [--aur]
+cpac diff <package>
 cpac aur <enable|disable>
+cpac config
+cpac clear-cache
 ```
 
 ## Requirements

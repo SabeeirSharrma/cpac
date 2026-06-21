@@ -1,5 +1,4 @@
 use anyhow::Result;
-use dirs;
 use sled::{open, Db, IVec};
 use std::fs;
 use std::path::{Path, PathBuf};

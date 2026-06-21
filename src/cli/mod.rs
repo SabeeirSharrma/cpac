@@ -2,7 +2,11 @@ use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::io::{self, IsTerminal, Write};
 
-use crate::{audit, cache, config, diff, display, install, remove, resolver, trust, update};
+use crate::{
+    audit, cache, config,
+    config::ConsentLevel,
+    diff, display, install, remove, resolver, trust, update,
+};
 
 const TAGLINE: &str = "A package trust layer for Arch-based Linux";
 
@@ -100,7 +104,7 @@ enum Commands {
         package: String,
     },
 
-    /// Change crowdsourcing/consent preferences. Coming in v0.5.
+    /// View or change CPAC configuration.
     Config,
 
     /// Configure AUR usage. Coming in v0.4.
@@ -175,7 +179,7 @@ pub fn run() -> Result<()> {
             diff::run(cache_ref()?, &package)?;
         }
         Commands::Config => {
-            println!("cpac config is coming in v0.5");
+            run_config()?;
         }
         Commands::Aur { action } => match action {
             AurAction::Enable => {
@@ -226,6 +230,60 @@ fn prompt_audit_details(audit: &audit::SystemAudit) -> Result<()> {
             display::print_trust_report(&pkg, &report);
         }
     }
+
+    Ok(())
+}
+
+fn run_config() -> Result<()> {
+    let cfg = config::load()?;
+
+    println!("Current configuration:");
+    println!("  AUR support:        {}", if cfg.aur_enabled { "enabled" } else { "disabled" });
+    println!("  Crowdsourced data:  {}", cfg.consent);
+    println!();
+
+    println!("Crowdsourced data submission");
+    println!("  CPAC can compare packages against anonymized data from other users");
+    println!("  to help detect tampered PKGBUILDs. Participation is optional.");
+    println!();
+    println!("  [1] No, don't submit anything");
+    println!("  [2] Yes, hash/signature only  (default)");
+    println!("  [3] Yes, full PKGBUILD");
+    println!();
+
+    print!("Choice (Default: 2): ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    let bytes_read = io::stdin().read_line(&mut input)?;
+
+    // If no input or EOF, keep the current setting
+    let trimmed = input.trim();
+    if trimmed.is_empty() || bytes_read == 0 {
+        println!("No changes made.");
+        return Ok(());
+    }
+
+    let choice: u8 = match trimmed.parse() {
+        Ok(n) => n,
+        Err(_) => {
+            bail!("Invalid choice: '{}'. Enter 1, 2, or 3.", trimmed);
+        }
+    };
+
+    let new_consent = ConsentLevel::from_number(choice).ok_or_else(|| {
+        anyhow::anyhow!("Invalid choice: '{}'. Enter 1, 2, or 3.", trimmed)
+    })?;
+
+    let mut cfg = config::load()?;
+    if cfg.consent == new_consent {
+        println!("No changes made.");
+        return Ok(());
+    }
+
+    cfg.consent = new_consent;
+    config::save(&cfg)?;
+    println!("Crowdsourced submission set to: {}", new_consent);
 
     Ok(())
 }

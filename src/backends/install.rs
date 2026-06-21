@@ -40,14 +40,14 @@ impl InstallBackend {
     /// Currently unused but kept for potential future use in backend selection logic.
     #[allow(dead_code)]
     pub fn can_install(&self, source: &PackageSource) -> bool {
-        match (self, source) {
-            (InstallBackend::Pacman, PackageSource::Official { .. }) => true,
-            (InstallBackend::Pacman, PackageSource::ThirdParty) => true,
-            (InstallBackend::Paru | InstallBackend::Yay, PackageSource::Aur) => true,
-            (InstallBackend::Paru | InstallBackend::Yay, PackageSource::Official { .. }) => true,
-            (InstallBackend::Paru | InstallBackend::Yay, PackageSource::ThirdParty) => true,
-            _ => false,
-        }
+        matches!(
+            (self, source),
+            (InstallBackend::Pacman, PackageSource::Official { .. })
+                | (InstallBackend::Pacman, PackageSource::ThirdParty)
+                | (InstallBackend::Paru | InstallBackend::Yay, PackageSource::Aur)
+                | (InstallBackend::Paru | InstallBackend::Yay, PackageSource::Official { .. })
+                | (InstallBackend::Paru | InstallBackend::Yay, PackageSource::ThirdParty)
+        )
     }
 }
 
