@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
 use crate::cache::Cache;
 use crate::config;
+use anyhow::Result;
 
 use crate::backends::{self, PackageInfo, PackageSource};
 
@@ -122,5 +122,23 @@ fn source_rank(source: &PackageSource) -> u8 {
         PackageSource::ThirdParty => 1,
         PackageSource::Aur => 2,
         PackageSource::Unknown => 3,
+    }
+}
+
+/// Check if a package is already installed.
+pub fn is_installed(package: &str) -> Result<bool> {
+    crate::backends::pacman::is_package_installed(package)
+}
+
+/// Fetch PKGBUILD for a package based on its source.
+/// Currently only supports AUR packages; returns None for official/third-party.
+pub fn fetch_pkgbuild_for_package(pkg: &PackageInfo) -> Result<Option<String>> {
+    match &pkg.source {
+        PackageSource::Aur => crate::backends::aur::fetch_pkgbuild(&pkg.name),
+        PackageSource::Official { .. } | PackageSource::ThirdParty => {
+            // For official packages, we could fetch from ABS but it's not available by default
+            Ok(None)
+        }
+        PackageSource::Unknown => Ok(None),
     }
 }

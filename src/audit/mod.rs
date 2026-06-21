@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
 use crate::cache::Cache;
+use anyhow::Result;
 
 use crate::{
-    backends::{aur, pacman, PackageInfo, PackageSource, classify_repo},
+    backends::{aur, classify_repo, pacman, PackageInfo, PackageSource},
     trust::{self, TrustReport, TrustTier},
 };
 
@@ -248,26 +248,59 @@ mod tests {
 
     #[test]
     fn official_arch_repos_are_official() {
-        assert!(matches!(classify_repo("core"), PackageSource::Official { .. }));
-        assert!(matches!(classify_repo("extra"), PackageSource::Official { .. }));
-        assert!(matches!(classify_repo("multilib"), PackageSource::Official { .. }));
-        assert!(matches!(classify_repo("testing"), PackageSource::Official { .. }));
-        assert!(matches!(classify_repo("community"), PackageSource::Official { .. }));
+        assert!(matches!(
+            classify_repo("core"),
+            PackageSource::Official { .. }
+        ));
+        assert!(matches!(
+            classify_repo("extra"),
+            PackageSource::Official { .. }
+        ));
+        assert!(matches!(
+            classify_repo("multilib"),
+            PackageSource::Official { .. }
+        ));
+        assert!(matches!(
+            classify_repo("testing"),
+            PackageSource::Official { .. }
+        ));
+        assert!(matches!(
+            classify_repo("community"),
+            PackageSource::Official { .. }
+        ));
     }
 
     #[test]
     fn distro_specific_repos_are_third_party() {
-        assert!(matches!(classify_repo("endeavouros"), PackageSource::ThirdParty));
-        assert!(matches!(classify_repo("cachyos"), PackageSource::ThirdParty));
-        assert!(matches!(classify_repo("cachyos-v3"), PackageSource::ThirdParty));
+        assert!(matches!(
+            classify_repo("endeavouros"),
+            PackageSource::ThirdParty
+        ));
+        assert!(matches!(
+            classify_repo("cachyos"),
+            PackageSource::ThirdParty
+        ));
+        assert!(matches!(
+            classify_repo("cachyos-v3"),
+            PackageSource::ThirdParty
+        ));
         assert!(matches!(classify_repo("garuda"), PackageSource::ThirdParty));
-        assert!(matches!(classify_repo("manjaro"), PackageSource::ThirdParty));
+        assert!(matches!(
+            classify_repo("manjaro"),
+            PackageSource::ThirdParty
+        ));
     }
 
     #[test]
     fn other_third_party_repos_are_third_party() {
-        assert!(matches!(classify_repo("chaotic-aur"), PackageSource::ThirdParty));
-        assert!(matches!(classify_repo("blackarch"), PackageSource::ThirdParty));
+        assert!(matches!(
+            classify_repo("chaotic-aur"),
+            PackageSource::ThirdParty
+        ));
+        assert!(matches!(
+            classify_repo("blackarch"),
+            PackageSource::ThirdParty
+        ));
     }
 
     #[test]

@@ -2,14 +2,17 @@ use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::io::{self, IsTerminal, Write};
 
-use crate::{audit, display, resolver, trust, cache, config};
+use crate::{
+    audit, cache, config,
+    config::ConsentLevel,
+    diff, display, install, remove, resolver, trust, update,
+};
 
 const TAGLINE: &str = "A package trust layer for Arch-based Linux";
 
 fn cache_ref() -> Result<&'static cache::Cache> {
-    static CACHE: once_cell::sync::Lazy<cache::Cache> = once_cell::sync::Lazy::new(|| {
-        cache::init(None).expect("Failed to initialize cache")
-    });
+    static CACHE: once_cell::sync::Lazy<cache::Cache> =
+        once_cell::sync::Lazy::new(|| cache::init(None).expect("Failed to initialize cache"));
     Ok(&CACHE)
 }
 
@@ -60,28 +63,48 @@ enum Commands {
         package: Option<String>,
     },
 
-    /// Install a package after trust analysis. Coming in v0.5.
+    /// Install a package after trust analysis.
     Install {
         /// Package name to install.
         package: String,
+
+        /// Skip trust analysis and confirmation prompt.
+        #[arg(long)]
+        force: bool,
+
+        /// Dry run - show what would be installed without actually installing.
+        #[arg(long)]
+        dry_run: bool,
     },
 
-    /// Remove a package. Coming later.
+    /// Remove a package.
     Remove {
         /// Package name to remove.
         package: String,
+
+        /// Also remove dependencies that are no longer needed.
+        #[arg(long)]
+        recursive: bool,
+
+        /// Skip confirmation prompt.
+        #[arg(long)]
+        force: bool,
     },
 
-    /// Update package metadata and sources. Coming later.
-    Update,
+    /// Update package metadata and sources.
+    Update {
+        /// Force AUR update even if AUR is disabled.
+        #[arg(long)]
+        aur: bool,
+    },
 
-    /// Show PKGBUILD diff (local or crowdsourced). Coming in v0.4.
+    /// Show PKGBUILD diff (local or crowdsourced).
     Diff {
         /// Package name to diff.
         package: String,
     },
 
-    /// Change crowdsourcing/consent preferences. Coming in v0.5.
+    /// View or change CPAC configuration.
     Config,
 
     /// Configure AUR usage. Coming in v0.4.
@@ -135,20 +158,28 @@ pub fn run() -> Result<()> {
                 prompt_audit_details(&audit)?;
             }
         }
-        Commands::Install { package } => {
-            println!("cpac install {} is coming in v0.5", package);
+        Commands::Install {
+            package,
+            force,
+            dry_run,
+        } => {
+            install::run(cache_ref()?, &package, force, dry_run)?;
         }
-        Commands::Remove { package } => {
-            println!("cpac remove {} is coming later", package);
+        Commands::Remove {
+            package,
+            recursive,
+            force,
+        } => {
+            remove::run(cache_ref()?, &package, recursive, force)?;
         }
-        Commands::Update => {
-            println!("cpac update is coming later");
+        Commands::Update { aur } => {
+            update::run(cache_ref()?, aur)?;
         }
         Commands::Diff { package } => {
-            println!("cpac diff {} is coming in v0.4", package);
+            diff::run(cache_ref()?, &package)?;
         }
         Commands::Config => {
-            println!("cpac config is coming in v0.5");
+            run_config()?;
         }
         Commands::Aur { action } => match action {
             AurAction::Enable => {
@@ -199,6 +230,60 @@ fn prompt_audit_details(audit: &audit::SystemAudit) -> Result<()> {
             display::print_trust_report(&pkg, &report);
         }
     }
+
+    Ok(())
+}
+
+fn run_config() -> Result<()> {
+    let cfg = config::load()?;
+
+    println!("Current configuration:");
+    println!("  AUR support:        {}", if cfg.aur_enabled { "enabled" } else { "disabled" });
+    println!("  Crowdsourced data:  {}", cfg.consent);
+    println!();
+
+    println!("Crowdsourced data submission");
+    println!("  CPAC can compare packages against anonymized data from other users");
+    println!("  to help detect tampered PKGBUILDs. Participation is optional.");
+    println!();
+    println!("  [1] No, don't submit anything");
+    println!("  [2] Yes, hash/signature only  (default)");
+    println!("  [3] Yes, full PKGBUILD");
+    println!();
+
+    print!("Choice (Default: 2): ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    let bytes_read = io::stdin().read_line(&mut input)?;
+
+    // If no input or EOF, keep the current setting
+    let trimmed = input.trim();
+    if trimmed.is_empty() || bytes_read == 0 {
+        println!("No changes made.");
+        return Ok(());
+    }
+
+    let choice: u8 = match trimmed.parse() {
+        Ok(n) => n,
+        Err(_) => {
+            bail!("Invalid choice: '{}'. Enter 1, 2, or 3.", trimmed);
+        }
+    };
+
+    let new_consent = ConsentLevel::from_number(choice).ok_or_else(|| {
+        anyhow::anyhow!("Invalid choice: '{}'. Enter 1, 2, or 3.", trimmed)
+    })?;
+
+    let mut cfg = config::load()?;
+    if cfg.consent == new_consent {
+        println!("No changes made.");
+        return Ok(());
+    }
+
+    cfg.consent = new_consent;
+    config::save(&cfg)?;
+    println!("Crowdsourced submission set to: {}", new_consent);
 
     Ok(())
 }

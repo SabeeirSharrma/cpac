@@ -190,13 +190,10 @@ pub fn print_system_audit(audit: &SystemAudit) {
             .join(", ");
         println!();
         println!(
-            "  {} {}",
+            "  {} {} package(s) from official repositories ({}) are excluded from warnings",
             "Official packages:".cyan().bold(),
-            format!(
-                "{} package(s) from official repositories ({}) are excluded from warnings",
-                audit.official_notices.len(),
-                repos
-            )
+            audit.official_notices.len(),
+            repos
         );
     }
 
@@ -211,13 +208,10 @@ pub fn print_system_audit(audit: &SystemAudit) {
 
     for warning in &audit.warnings {
         println!(
-            "    {:<24} [{}]",
+            "    {:<24} [Trust: {} - {}]",
             warning.package_name.as_str().bold(),
-            format!(
-                "Trust: {} - {}",
-                colored_warning_label(warning.score, &warning.tier),
-                warning.reason
-            )
+            colored_warning_label(warning.score, &warning.tier),
+            warning.reason
         );
     }
     println!();

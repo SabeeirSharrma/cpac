@@ -1,9 +1,13 @@
 pub mod aur;
+pub mod install;
 pub mod pacman;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+#[allow(unused)]
+pub use install::InstallBackend;
 
 /// The source repository a package comes from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,7 +71,9 @@ pub fn is_official_arch_repo(repo: &str) -> bool {
 /// Classify a repository into the appropriate PackageSource.
 pub fn classify_repo(repo: &str) -> PackageSource {
     if is_official_arch_repo(repo) {
-        PackageSource::Official { repo: repo.to_string() }
+        PackageSource::Official {
+            repo: repo.to_string(),
+        }
     } else {
         PackageSource::ThirdParty
     }

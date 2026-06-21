@@ -1,16 +1,19 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::DateTime;
 use serde::Deserialize;
+use std::time::Duration;
 
 use super::{PackageInfo, PackageSource};
 
-const AUR_RPC_URL: &str = "https://aur.archlinux.org/rpc/v5";
+const AUR_RPC_URL: &str = "https://aur.archlinux.org/rpc/";
+const PKGBUILD_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// AUR RPC response envelope.
 #[derive(Debug, Deserialize)]
 struct AurResponse {
     #[serde(rename = "resultcount")]
     result_count: u32,
+    #[serde(default)]
     results: Vec<AurPackage>,
 }
 
@@ -76,10 +79,14 @@ impl AurPackage {
 
 /// Search AUR packages by keyword.
 pub fn search(query: &str) -> Result<Vec<PackageInfo>> {
-    let url = format!("{}/search/{}", AUR_RPC_URL, query);
-
-    let response: AurResponse = reqwest::blocking::get(&url)
+    let client = reqwest::blocking::Client::new();
+    let response: AurResponse = client
+        .get(AUR_RPC_URL)
+        .query(&[("v", "5"), ("type", "search"), ("arg", query)])
+        .send()
         .context("Failed to connect to AUR. Check your internet connection.")?
+        .error_for_status()
+        .context("AUR returned an error response")?
         .json()
         .context("Failed to parse AUR response")?;
 
@@ -99,10 +106,13 @@ pub fn info_multi(packages: &[&str]) -> Result<Vec<PackageInfo>> {
     }
 
     let client = reqwest::blocking::Client::new();
-    let query: Vec<(&str, &str)> = packages.iter().map(|pkg| ("arg[]", *pkg)).collect();
+    let mut query = vec![("v", "5"), ("type", "info")];
+    for package in packages {
+        query.push(("arg[]", *package));
+    }
 
     let response: AurResponse = client
-        .get(format!("{}/info", AUR_RPC_URL))
+        .get(AUR_RPC_URL)
         .query(&query)
         .send()
         .context("Failed to connect to AUR. Check your internet connection.")?
@@ -120,10 +130,14 @@ pub fn info_multi(packages: &[&str]) -> Result<Vec<PackageInfo>> {
 
 /// Get detailed info for a specific AUR package.
 pub fn info(package: &str) -> Result<Option<PackageInfo>> {
-    let url = format!("{}/info/{}", AUR_RPC_URL, package);
-
-    let response: AurResponse = reqwest::blocking::get(&url)
+    let client = reqwest::blocking::Client::new();
+    let response: AurResponse = client
+        .get(AUR_RPC_URL)
+        .query(&[("v", "5"), ("type", "info"), ("arg", package)])
+        .send()
         .context("Failed to connect to AUR. Check your internet connection.")?
+        .error_for_status()
+        .context("AUR returned an error response")?
         .json()
         .context("Failed to parse AUR response")?;
 
@@ -136,4 +150,43 @@ pub fn info(package: &str) -> Result<Option<PackageInfo>> {
         .into_iter()
         .next()
         .map(|p| p.into_package_info()))
+}
+
+/// Fetch the PKGBUILD content for an AUR package.
+pub fn fetch_pkgbuild(package: &str) -> Result<Option<String>> {
+    // AUR git repository URL pattern
+    let url = format!(
+        "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h={}",
+        package
+    );
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(PKGBUILD_FETCH_TIMEOUT)
+        .build()
+        .context("Failed to create HTTP client")?;
+
+    let response = client
+        .get(&url)
+        .send()
+        .context("Failed to connect to AUR for PKGBUILD")?;
+
+    let status = response.status();
+    if status.is_client_error() {
+        // 4xx errors (including 404) mean package not found
+        if status.as_u16() == 404 {
+            return Ok(None);
+        }
+        return Err(anyhow!("AUR returned client error {} for package '{}'", status, package));
+    }
+    if status.is_server_error() {
+        return Err(anyhow!("AUR server error {} for package '{}'. Try again later.", status, package));
+    }
+
+    let content = response.text().context("Failed to read PKGBUILD content")?;
+
+    if content.trim().is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(content))
 }
