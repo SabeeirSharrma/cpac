@@ -1,175 +1,132 @@
-# CPAC v0.5.0 — Package Installation, Removal & Updates
+# CPAC v0.6.0 — Stability, Config & Auto-Cache
 
 ## Overview
 
-Version 0.5 introduces the core package management commands: `cpac install`, `cpac remove`, `cpac update`, `cpac diff`, and `cpac config`. These commands integrate trust analysis with actual package operations, providing a complete workflow from trust evaluation to installation.
+Version 0.6 focuses on hardening, usability, and removing friction. Key fixes: AUR failures no longer kill searches, cache has TTL to prevent stale results, AUR is enabled by default for new users. The config system was redesigned with proper subcommands, auto cache clearing was added, and the first-run consent prompt ensures users set privacy preferences before using the tool.
 
 ---
 
 ## Changes
 
-### New Commands
+### Bug Fixes
 
-#### `cpac install <package>`
+#### AUR failure no longer kills entire search
 
-- **Trust analysis first**: Shows full trust report before prompting for installation
-- **AUR support**: Uses `paru` (preferred) or `yay` for AUR packages, `pacman` for official repos
-- **Sudo preflight**: Requests sudo credentials before privileged install steps so `pacman` operations can run without mid-command permission failures
-- **AUR behavior**: Leaves `paru`/`yay` unwrapped, but primes sudo first so helpers can still complete package installation when they invoke `pacman`
-- **PKGBUILD diffing on upgrades**: Caches PKGBUILDs after install; on upgrade, diffs new vs cached PKGBUILD and flags suspicious patterns (remote code execution, obfuscation, system path modifications, etc.)
-- **Trust score adjustment**: Suspicious patterns add negative trust signals, lowering score
-- **Flags**:
-  - `--force`: Skip trust analysis and confirmation prompt
-  - `--dry-run`: Show what would be installed without actually installing
-- **AUR gating**: Respects `cpac aur enable/disable` setting
+Previously, if the AUR RPC returned an error (network timeout, DNS failure, rate limiting), the `?` operator propagated the error and the **entire search failed** — no pacman results were shown. Now AUR failures are caught gracefully: a warning is printed and official repo results are still returned.
 
-#### `cpac remove <package>`
+**Files**: `src/resolver/mod.rs`
 
-- **Trust analysis before removal**: Shows trust report to inform user
-- **Recursive removal**: `--recursive` flag removes unneeded dependencies (`pacman -Rs`)
-- **Sudo preflight**: Requests sudo credentials before removal, including recursive removal
-- **Force flag**: `--force` skips confirmation prompt
-- **Safety**: Won't remove packages that aren't installed
+#### Cache now has TTL (no more stale results forever)
 
-#### `cpac update`
+Search results were previously cached indefinitely. If packages were added/removed from repos since the last search, users would see stale results until manually running `cpac clear-cache`. Now all cache entries have timestamps:
+- Search cache expires after **1 hour**
+- Info cache expires after **24 hours**
+- Expired entries trigger a fresh live search automatically
+- Old cache entries (without timestamps) gracefully fall through to live search
 
-- **Official databases**: Runs `pacman -Sy` to refresh official repositories
-- **AUR databases**: Updates AUR automatically if enabled; use `--aur` to force AUR update when disabled
-- **Sudo preflight**: Requests sudo credentials before syncing official package databases
-- **AUR gating**: Updates AUR by default when enabled via `cpac aur enable`; `--aur` flag forces AUR update when disabled
+**Files**: `src/resolver/mod.rs`
 
-#### `cpac diff <package>`
+#### AUR now enabled by default
 
-- **Local diffing**: Compares cached PKGBUILD (from previous install) against current PKGBUILD
-- **Suspicious pattern detection**: Flags remote script execution, obfuscation, system path modifications, etc.
-- **AUR support**: Fetches current PKGBUILD from AUR git repository
-- **Upgrade awareness**: Shows what changed since last CPAC install
+`Config::default()` previously set `aur_enabled: false`, so new users with no config file got zero AUR results silently with no warning. Now AUR defaults to `true` for new installations.
 
-### `cpac config`
+**Files**: `src/config/mod.rs`
 
-- **View current settings**: Shows AUR support status and crowdsourced data submission level
-- **Interactive consent management**: Choose submission level for crowdsourced PKGBUILD data
-  - `[1]` No submission — don't send anything
-  - `[2]` Hash/signature only (default)
-  - `[3]` Full PKGBUILD — helps with better diff accuracy
-- **Stored locally**: Consent choice persists in `~/.cpac/config.toml`
-- **Safe default**: Pressing Enter with no input preserves the current setting
+### New Features
 
----
+#### Auto cache clearing
 
-### PKGBUILD Diff Analysis (Local)
+CPAC automatically clears its metadata cache based on a configurable interval:
+- **Daily** (`cpac config set cache daily`)
+- **Weekly** (`cpac config set cache weekly`)
+- **Monthly** (`cpac config set cache monthly`) — default
 
-New suspicious pattern detection in `src/trust/mod.rs`:
+Auto-clearing runs silently on every CPAC invocation. The interval and last clear timestamp are stored in `~/.cpac/config.toml`.
 
-- Remote script execution (`curl | sh`, `wget | bash`)
-- Base64/hex decoding (obfuscation)
-- Inline `eval`/`exec` (removed overly broad `source` check)
-- Aggressive `rm -rf` outside pkgdir/srcdir
-- Dynamic `pkgver` from network
-- Language package manager installs (`pip install`, `npm install`, `cargo install` in build)
-- System path modifications outside pkgdir
+**Files**: `src/config/mod.rs`, `src/cli/mod.rs`
 
-### New Backend Module
+#### First-run consent prompt
 
-- `src/backends/install.rs` — `InstallBackend` enum (Pacman/Paru/Yay), backend selection, install/remove/update operations
-- `src/backends/aur.rs` — Added `fetch_pkgbuild()` with timeout and proper HTTP error handling (404 vs 5xx)
-- `src/prompt.rs` — Shared confirmation prompt utility with EOF handling
+On first launch, CPAC shows an interactive consent prompt for crowdsourced data sharing. This only appears once, only in interactive terminals. Users can change their preference anytime via `cpac config set consent`.
 
-### Resolver Extensions
+The prompt asks:
+- `[1]` No, don't submit anything
+- `[2]` Yes, hash/signature only (default)
+- `[3]` Yes, full PKGBUILD
 
-- `fetch_pkgbuild()` — Fetch PKGBUILD from appropriate source
-- `fetch_pkgbuild_for_package()` — Shared PKGBUILD fetching for install/diff
-- `is_installed()` — Check if package is installed (optimized via `pacman -Q`)
-- PKGBUILD caching integration for diffing
+**Files**: `src/cli/mod.rs`, `src/config/mod.rs`
 
-### Trust Extensions
+#### Redesigned config command
 
-- `analyze_pkgbuild_diff()` — Compare two PKGBUILDs for suspicious changes (LCS-based ordered diff)
-- `diff_to_signals()` — Convert diff findings to trust signals (fixed: no double-counting)
-- `get_cached_pkgbuild()` / `cache_pkgbuild()` — PKGBUILD cache operations
+The config command was rebuilt with proper clap subcommands for scriptability and self-documentation:
+
+```bash
+cpac config show               # display all current settings
+cpac config set aur on|off     # enable/disable AUR search
+cpac config set consent ...    # set crowdsourced data sharing level
+cpac config set cache ...      # set auto-clear interval
+cpac config reset              # reset all settings to defaults
+cpac config path               # show config file location
+```
+
+All settings are non-interactive and work in scripts. The old `cpac aur enable/disable` command is removed — replaced by `cpac config set aur`.
+
+**Files**: `src/cli/mod.rs`, `src/config/mod.rs`
+
+### Warning Cleanup
+
+- `src/cache/mod.rs` — Added `#[allow(dead_code)]` for `advisories` field and methods (reserved for future advisory integration per spec)
+- `src/config/mod.rs` — Replaced manual `Default` impl for `CacheInterval` with `#[derive(Default)]`
 
 ---
 
 ## Verification
 
-### Install with Trust Analysis
+### Config command
 
 ```bash
-$ cpac install firefox --dry-run
-# Shows trust report (80/100 SAFE), then:
-[DRY RUN] Would install 'firefox' using pacman backend
-
-$ cpac install google-chrome --dry-run
-# Shows trust report (65/100 MODERATE), then:
-[DRY RUN] Would install 'google-chrome' using yay backend
-```
-
-### AUR Disabled Blocks Install
-
-```bash
-$ cpac aur disable
-$ cpac install google-chrome --dry-run
-Error: Package 'google-chrome' not found in official repositories or AUR
-```
-
-### Update Command
-
-```bash
-cpac update          # Official only
-cpac update --aur    # Official + AUR (if enabled)
-```
-
-### Diff Command (after install caches PKGBUILD)
-
-```bash
-cpac diff firefox    # Shows diff between cached and current PKGBUILD
-```
-
-### Remove with Trust Analysis
-
-```bash
-$ cpac remove firefox --force
-# Shows trust report, then removes with pacman -R
-```
-
-### Config Command
-
-```bash
-$ cpac config
+$ cpac config show
 Current configuration:
-  AUR support:        enabled
-  Crowdsourced data:  Hash/signature only
+  AUR support:           on
+  Crowdsourced data:     Hash/signature only
+  Auto-clear cache:      monthly
+  Config file:           /home/user/.cpac/config.toml
 
-Crowdsourced data submission
-  [1] No, don't submit anything
-  [2] Yes, hash/signature only  (default)
-  [3] Yes, full PKGBUILD
+$ cpac config set consent full
+Crowdsourced data set to: Full PKGBUILD
 
-Choice (Default: 2): 3
-Crowdsourced submission set to: Full PKGBUILD
+$ cpac config set cache weekly
+Auto-clear cache interval set to: weekly
+
+$ cpac config set aur off
+AUR support disabled.
+
+$ cpac config reset
+Configuration reset to defaults.
 ```
 
-### All Tests Pass
+### Search with AUR failure
 
-- 9/9 unit tests passing (repo classification, trust scoring, audit logic)
-- `cargo clippy` clean (only expected warnings about unused placeholder cache fields)
+```bash
+# If AUR is down, search still returns official results:
+$ cpac search firefox
+Warning: AUR search failed (...). Showing official results only.
+Package                          Version        Source           Description
+firefox                          152.0.2-1      official/extra   Fast, Private & Safe Web Browser
+...
+```
+
+### All Checks Pass
+
+- `cargo clippy` — clean (zero warnings)
+- `cargo build --release` — clean (zero warnings)
 
 ---
 
-## Files Changed (v0.5)
+## Files Changed (v0.6)
 
-- `Cargo.toml` — version bump to 0.5.0
-- `src/main.rs` — added `install`, `remove`, `update`, `diff`, `prompt` modules
-- `src/backends/install.rs` — new install backend module (simplified match arms, exit status check for AUR detection)
-- `src/backends/aur.rs` — added `fetch_pkgbuild()` with 30s timeout, proper HTTP error handling (404 returns None, 5xx returns error)
-- `src/backends/mod.rs` — export `InstallBackend`
-- `src/backends/pacman.rs` — added `is_package_installed()` for efficient single-package check
-- `src/prompt.rs` — new shared confirmation prompt utility with EOF handling
-- `src/resolver/mod.rs` — `fetch_pkgbuild()`, `fetch_pkgbuild_for_package()`, `is_installed()` (optimized)
-- `src/trust/mod.rs` — PKGBUILD diff analysis, suspicious pattern detection, caching (fixed double-counting, removed `source` false positive, removed empty dependency block)
-- `src/install.rs` — new install command implementation (consolidated dry-run, shared prompt)
-- `src/remove.rs` — new remove command implementation (shared prompt)
-- `src/update.rs` — new update command implementation (auto AUR update when enabled)
-- `src/diff.rs` — new diff command implementation (uses shared PKGBUILD fetch)
-- `src/config/mod.rs` — added `ConsentLevel` enum, `consent` field, Display/Serialize support
-- `src/cli/mod.rs` — updated command definitions and imports
+- `Cargo.toml` — version bump to 0.6.0
+- `src/resolver/mod.rs` — AUR failure graceful fallback; cache TTL with `CachedEntry<T>` wrapper
+- `src/config/mod.rs` — `CacheInterval` enum, `Config` struct with TTL/first-run fields, `ValueEnum` derives, `path()` helper
+- `src/cache/mod.rs` — annotated `advisories` as reserved for future use
+- `src/cli/mod.rs` — redesigned `config` command with clap subcommands; first-run consent prompt; auto cache clearing; removed standalone `Aur` command

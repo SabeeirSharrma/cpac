@@ -1,11 +1,14 @@
 use anyhow::Result;
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "snake_case")]
+#[value(rename_all = "kebab-case")]
 pub enum ConsentLevel {
     /// Don't submit anything.
     None,
@@ -41,18 +44,79 @@ impl fmt::Display for ConsentLevel {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+#[value(rename_all = "kebab-case")]
+pub enum CacheInterval {
+    Daily,
+    Weekly,
+    #[default]
+    Monthly,
+}
+
+impl CacheInterval {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Daily => "daily",
+            Self::Weekly => "weekly",
+            Self::Monthly => "monthly",
+        }
+    }
+
+    /// Returns the interval in seconds.
+    pub fn as_secs(self) -> u64 {
+        match self {
+            Self::Daily => 86400,
+            Self::Weekly => 604800,
+            Self::Monthly => 2592000, // 30 days
+        }
+    }
+}
+
+impl fmt::Display for CacheInterval {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.label())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
 pub struct Config {
+    #[serde(default = "default_aur_enabled")]
     pub aur_enabled: bool,
     #[serde(default)]
     pub consent: ConsentLevel,
+    #[serde(default)]
+    pub cache_interval: CacheInterval,
+    #[serde(default)]
+    pub last_cache_clear: u64,
+    #[serde(default)]
+    pub first_run_done: bool,
 }
 
+fn default_aur_enabled() -> bool {
+    true
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            aur_enabled: default_aur_enabled(),
+            consent: ConsentLevel::default(),
+            cache_interval: CacheInterval::default(),
+            last_cache_clear: 0,
+            first_run_done: false,
+        }
+    }
+}
 
 fn config_path() -> Result<PathBuf> {
     let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not get home directory"))?;
     Ok(home.join(".cpac/config.toml"))
+}
+
+/// Return the path to the config file.
+pub fn path() -> Result<PathBuf> {
+    config_path()
 }
 
 pub fn load() -> Result<Config> {
@@ -84,4 +148,50 @@ pub fn set_aur_enabled(enabled: bool) -> Result<()> {
 
 pub fn is_aur_enabled() -> bool {
     load().map(|c| c.aur_enabled).unwrap_or(false)
+}
+
+pub fn set_consent(consent: ConsentLevel) -> Result<()> {
+    let mut config = load().unwrap_or_default();
+    config.consent = consent;
+    save(&config)
+}
+
+pub fn set_cache_interval(interval: CacheInterval) -> Result<()> {
+    let mut config = load().unwrap_or_default();
+    config.cache_interval = interval;
+    save(&config)
+}
+
+/// Check if the cache should be cleared based on the configured interval.
+/// Returns true if the cache was cleared.
+pub fn maybe_clear_cache() -> Result<bool> {
+    let mut config = load().unwrap_or_default();
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let interval_secs = config.cache_interval.as_secs();
+
+    if now.saturating_sub(config.last_cache_clear) > interval_secs {
+        crate::cache::clear_cache()?;
+        config.last_cache_clear = now;
+        save(&config)?;
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+/// Mark the first-run consent prompt as completed.
+pub fn mark_first_run_done() -> Result<()> {
+    let mut config = load().unwrap_or_default();
+    config.first_run_done = true;
+    save(&config)
+}
+
+/// Returns true if the first-run consent prompt has been shown.
+pub fn is_first_run_done() -> bool {
+    load().map(|c| c.first_run_done).unwrap_or(false)
 }

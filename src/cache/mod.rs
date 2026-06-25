@@ -34,12 +34,13 @@ pub struct Cache {
     _dir: PathBuf,
     pub packages: Db,
     pub trust: Db,
+    /// Known security advisories — reserved for future advisory integration.
+    #[allow(dead_code)]
     pub advisories: Db,
     pub pkgbuilds: Db,
 }
 
 impl Cache {
-    /// Simple getter/setter wrappers for demonstration.
     pub fn get_packages<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
         Ok(self.packages.get(key)?.map(|ivec| ivec.to_vec()))
     }
@@ -56,9 +57,13 @@ impl Cache {
         self.trust.insert(key, ivec)?;
         Ok(())
     }
+    /// Reserved for future advisory integration.
+    #[allow(dead_code)]
     pub fn get_advisories<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<Vec<u8>>> {
         Ok(self.advisories.get(key)?.map(|ivec| ivec.to_vec()))
     }
+    /// Reserved for future advisory integration.
+    #[allow(dead_code)]
     pub fn insert_advisories<K: AsRef<[u8]>, V: AsRef<[u8]>>(
         &self,
         key: K,

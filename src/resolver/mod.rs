@@ -1,10 +1,47 @@
 use std::collections::HashMap;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use serde::{Deserialize, Serialize};
 
 use crate::cache::Cache;
 use crate::config;
 use anyhow::Result;
 
 use crate::backends::{self, PackageInfo, PackageSource};
+
+/// How long cached search results stay valid.
+const SEARCH_CACHE_TTL: Duration = Duration::from_secs(3600); // 1 hour
+
+/// How long cached info results stay valid.
+const INFO_CACHE_TTL: Duration = Duration::from_secs(86400); // 24 hours
+
+/// Wrapper to attach a timestamp to cached data.
+#[derive(Serialize, Deserialize)]
+struct CachedEntry<T> {
+    timestamp_secs: u64,
+    data: T,
+}
+
+impl<T> CachedEntry<T> {
+    fn new(data: T) -> Self {
+        let timestamp_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        Self {
+            timestamp_secs,
+            data,
+        }
+    }
+
+    fn is_expired(&self, ttl: Duration) -> bool {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        now.saturating_sub(self.timestamp_secs) > ttl.as_secs()
+    }
+}
 
 /// Search official repositories and AUR, ranked by relevance then source.
 pub fn search(cache: &Cache, query: &str) -> Result<Vec<PackageInfo>> {
@@ -13,16 +50,20 @@ pub fn search(cache: &Cache, query: &str) -> Result<Vec<PackageInfo>> {
 
     let cache_key = format!("search:{query}");
     if let Some(cached) = cache.get_packages(&cache_key)? {
-        if let Ok(pkgs) = serde_json::from_slice::<Vec<PackageInfo>>(&cached) {
-            // Filter out AUR packages if AUR is disabled
-            if !aur_enabled {
-                let filtered: Vec<PackageInfo> = pkgs
-                    .into_iter()
-                    .filter(|p| !matches!(p.source, PackageSource::Aur))
-                    .collect();
-                return Ok(filtered);
+        if let Ok(entry) = serde_json::from_slice::<CachedEntry<Vec<PackageInfo>>>(&cached) {
+            if !entry.is_expired(SEARCH_CACHE_TTL) {
+                // Filter out AUR packages if AUR is disabled
+                if !aur_enabled {
+                    let filtered: Vec<PackageInfo> = entry
+                        .data
+                        .into_iter()
+                        .filter(|p| !matches!(p.source, PackageSource::Aur))
+                        .collect();
+                    return Ok(filtered);
+                }
+                return Ok(entry.data);
             }
-            return Ok(pkgs);
+            // Cache expired — fall through to live search
         }
     }
 
@@ -30,8 +71,16 @@ pub fn search(cache: &Cache, query: &str) -> Result<Vec<PackageInfo>> {
 
     if aur_enabled {
         // AUR first, then pacman — pacman overwrites on name collision (preferred)
-        for pkg in backends::aur::search(query)? {
-            by_name.insert(pkg.name.clone(), pkg);
+        // Gracefully handle AUR failures so pacman results are still shown
+        match backends::aur::search(query) {
+            Ok(aur_pkgs) => {
+                for pkg in aur_pkgs {
+                    by_name.insert(pkg.name.clone(), pkg);
+                }
+            }
+            Err(e) => {
+                eprintln!("Warning: AUR search failed ({}). Showing official results only.", e);
+            }
         }
     }
 
@@ -52,8 +101,8 @@ pub fn search(cache: &Cache, query: &str) -> Result<Vec<PackageInfo>> {
             .then_with(|| a.name.cmp(&b.name))
     });
 
-    // Cache the results
-    if let Ok(serialized) = serde_json::to_vec(&packages) {
+    // Cache the results with a timestamp
+    if let Ok(serialized) = serde_json::to_vec(&CachedEntry::new(&packages)) {
         let _ = cache.insert_packages(&cache_key, serialized);
     }
 
@@ -67,29 +116,38 @@ pub fn resolve(cache: &Cache, package: &str) -> Result<Option<PackageInfo>> {
 
     let cache_key = format!("info:{package}");
     if let Some(cached) = cache.get_packages(&cache_key)? {
-        if let Ok(pkg) = serde_json::from_slice::<PackageInfo>(&cached) {
-            // Skip cached AUR packages if AUR is disabled
-            if !aur_enabled && matches!(pkg.source, PackageSource::Aur) {
-                // Fall through to re-resolve from official sources only
-            } else {
-                return Ok(Some(pkg));
+        if let Ok(entry) = serde_json::from_slice::<CachedEntry<PackageInfo>>(&cached) {
+            if !entry.is_expired(INFO_CACHE_TTL) {
+                // Skip cached AUR packages if AUR is disabled
+                if !aur_enabled && matches!(entry.data.source, PackageSource::Aur) {
+                    // Fall through to re-resolve from official sources only
+                } else {
+                    return Ok(Some(entry.data));
+                }
             }
+            // Cache expired — fall through to live resolve
         }
     }
 
     if let Some(pkg) = backends::pacman::info(package)? {
-        if let Ok(serialized) = serde_json::to_vec(&pkg) {
+        if let Ok(serialized) = serde_json::to_vec(&CachedEntry::new(&pkg)) {
             let _ = cache.insert_packages(&cache_key, serialized);
         }
         return Ok(Some(pkg));
     }
 
     if aur_enabled {
-        if let Some(pkg) = backends::aur::info(package)? {
-            if let Ok(serialized) = serde_json::to_vec(&pkg) {
-                let _ = cache.insert_packages(&cache_key, serialized);
+        match backends::aur::info(package) {
+            Ok(Some(pkg)) => {
+                if let Ok(serialized) = serde_json::to_vec(&CachedEntry::new(&pkg)) {
+                    let _ = cache.insert_packages(&cache_key, serialized);
+                }
+                return Ok(Some(pkg));
             }
-            return Ok(Some(pkg));
+            Ok(None) => {}
+            Err(e) => {
+                eprintln!("Warning: AUR lookup failed ({}).", e);
+            }
         }
     }
 

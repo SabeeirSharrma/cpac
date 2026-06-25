@@ -4,7 +4,7 @@ use std::io::{self, IsTerminal, Write};
 
 use crate::{
     audit, cache, config,
-    config::ConsentLevel,
+    config::{CacheInterval, ConsentLevel},
     diff, display, install, remove, resolver, trust, update,
 };
 
@@ -105,25 +105,129 @@ enum Commands {
     },
 
     /// View or change CPAC configuration.
-    Config,
-
-    /// Configure AUR usage. Coming in v0.4.
-    Aur {
-        /// AUR setting to change.
-        action: AurAction,
-    },
+    #[command(subcommand)]
+    Config(ConfigCommand),
 
     /// Clear the local metadata cache.
     ClearCache,
 }
 
+#[derive(Debug, Subcommand)]
+enum ConfigCommand {
+    /// Show current configuration values.
+    Show,
+
+    /// Set a configuration value.
+    #[command(subcommand)]
+    Set(SetCommand),
+
+    /// Reset configuration to defaults.
+    Reset,
+
+    /// Show the path to the config file.
+    Path,
+}
+
+#[derive(Debug, Subcommand)]
+enum SetCommand {
+    /// Enable or disable AUR package search.
+    ///
+    /// Examples:
+    ///   cpac config set aur on
+    ///   cpac config set aur off
+    Aur {
+        /// "on" to enable, "off" to disable.
+        value: OnOff,
+    },
+
+    /// Set crowdsourced data sharing level.
+    ///
+    /// Examples:
+    ///   cpac config set consent none
+    ///   cpac config set consent hash
+    ///   cpac config set consent full
+    Consent {
+        /// "none", "hash", or "full".
+        value: ConsentLevel,
+    },
+
+    /// Set automatic cache clearing interval.
+    ///
+    /// Examples:
+    ///   cpac config set cache daily
+    ///   cpac config set cache weekly
+    ///   cpac config set cache monthly
+    Cache {
+        /// "daily", "weekly", or "monthly".
+        value: CacheInterval,
+    },
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
-enum AurAction {
-    Enable,
-    Disable,
+enum OnOff {
+    On,
+    Off,
+}
+
+/// Show the first-run consent prompt for crowdsourced data sharing.
+fn first_run_prompt() -> Result<()> {
+    if config::is_first_run_done() {
+        return Ok(());
+    }
+
+    // Only prompt in interactive terminals
+    if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+        return Ok(());
+    }
+
+    println!();
+    println!("  Welcome to CPAC!");
+    println!("  Before you get started, we need to know about your privacy preferences.");
+    println!();
+    println!("  CPAC can compare packages against anonymized data from other users");
+    println!("  to help detect tampered PKGBUILDs. Participation is completely optional.");
+    println!();
+    println!("  [1] No, don't submit anything");
+    println!("  [2] Yes, hash/signature only  (default)");
+    println!("  [3] Yes, full PKGBUILD");
+    println!();
+
+    print!("  Choice (Default: 2): ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    let bytes_read = io::stdin().read_line(&mut input)?;
+
+    let trimmed = input.trim();
+    let consent = if trimmed.is_empty() || bytes_read == 0 {
+        ConsentLevel::default()
+    } else {
+        let choice: u8 = trimmed.parse().unwrap_or(2);
+        ConsentLevel::from_number(choice).unwrap_or_default()
+    };
+
+    config::set_consent(consent)?;
+    config::mark_first_run_done()?;
+
+    println!("  Crowdsourced submission set to: {}", consent);
+    println!();
+
+    Ok(())
+}
+
+/// Check and perform automatic cache clearing based on configured interval.
+fn auto_cache_clear() -> Result<()> {
+    let _ = config::maybe_clear_cache()?;
+    Ok(())
 }
 
 pub fn run() -> Result<()> {
+    // First-run consent prompt (only shows once, only in interactive terminals)
+    first_run_prompt()?;
+
+    // Automatic cache clearing based on configured interval
+    auto_cache_clear()?;
+
     let cli = Cli::parse();
 
     let Some(command) = cli.command else {
@@ -178,18 +282,11 @@ pub fn run() -> Result<()> {
         Commands::Diff { package } => {
             diff::run(cache_ref()?, &package)?;
         }
-        Commands::Config => {
-            run_config()?;
-        }
-        Commands::Aur { action } => match action {
-            AurAction::Enable => {
-                config::set_aur_enabled(true)?;
-                println!("AUR support enabled.");
-            }
-            AurAction::Disable => {
-                config::set_aur_enabled(false)?;
-                println!("AUR support disabled.");
-            }
+        Commands::Config(cmd) => match cmd {
+            ConfigCommand::Show => config_show()?,
+            ConfigCommand::Set(set_cmd) => config_set(set_cmd)?,
+            ConfigCommand::Reset => config_reset()?,
+            ConfigCommand::Path => config_path()?,
         },
         Commands::ClearCache => {
             cache::clear_cache()?;
@@ -234,56 +331,54 @@ fn prompt_audit_details(audit: &audit::SystemAudit) -> Result<()> {
     Ok(())
 }
 
-fn run_config() -> Result<()> {
+// ── Config subcommands ──────────────────────────────────────────────
+
+fn config_show() -> Result<()> {
     let cfg = config::load()?;
 
     println!("Current configuration:");
-    println!("  AUR support:        {}", if cfg.aur_enabled { "enabled" } else { "disabled" });
-    println!("  Crowdsourced data:  {}", cfg.consent);
     println!();
+    println!("  AUR support:           {}", if cfg.aur_enabled { "on" } else { "off" });
+    println!("  Crowdsourced data:     {}", cfg.consent);
+    println!("  Auto-clear cache:      {}", cfg.cache_interval);
+    println!("  Config file:           {}", config::path()?.display());
 
-    println!("Crowdsourced data submission");
-    println!("  CPAC can compare packages against anonymized data from other users");
-    println!("  to help detect tampered PKGBUILDs. Participation is optional.");
-    println!();
-    println!("  [1] No, don't submit anything");
-    println!("  [2] Yes, hash/signature only  (default)");
-    println!("  [3] Yes, full PKGBUILD");
-    println!();
+    Ok(())
+}
 
-    print!("Choice (Default: 2): ");
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    let bytes_read = io::stdin().read_line(&mut input)?;
-
-    // If no input or EOF, keep the current setting
-    let trimmed = input.trim();
-    if trimmed.is_empty() || bytes_read == 0 {
-        println!("No changes made.");
-        return Ok(());
-    }
-
-    let choice: u8 = match trimmed.parse() {
-        Ok(n) => n,
-        Err(_) => {
-            bail!("Invalid choice: '{}'. Enter 1, 2, or 3.", trimmed);
+fn config_set(cmd: SetCommand) -> Result<()> {
+    match cmd {
+        SetCommand::Aur { value } => {
+            let enabled = matches!(value, OnOff::On);
+            config::set_aur_enabled(enabled)?;
+            println!("AUR support {}.", if enabled { "enabled" } else { "disabled" });
         }
-    };
-
-    let new_consent = ConsentLevel::from_number(choice).ok_or_else(|| {
-        anyhow::anyhow!("Invalid choice: '{}'. Enter 1, 2, or 3.", trimmed)
-    })?;
-
-    let mut cfg = config::load()?;
-    if cfg.consent == new_consent {
-        println!("No changes made.");
-        return Ok(());
+        SetCommand::Consent { value } => {
+            config::set_consent(value)?;
+            println!("Crowdsourced data set to: {}", value);
+        }
+        SetCommand::Cache { value } => {
+            config::set_cache_interval(value)?;
+            println!("Auto-clear cache interval set to: {}", value);
+        }
     }
+    Ok(())
+}
 
-    cfg.consent = new_consent;
-    config::save(&cfg)?;
-    println!("Crowdsourced submission set to: {}", new_consent);
+fn config_reset() -> Result<()> {
+    let default = config::Config::default();
+    config::save(&default)?;
+    println!("Configuration reset to defaults.");
+    println!();
+    println!("  AUR support:           {}", if default.aur_enabled { "on" } else { "off" });
+    println!("  Crowdsourced data:     {}", default.consent);
+    println!("  Auto-clear cache:      {}", default.cache_interval);
 
+    Ok(())
+}
+
+fn config_path() -> Result<()> {
+    let path = config::path()?;
+    println!("{}", path.display());
     Ok(())
 }

@@ -55,20 +55,32 @@ Show a trust report:
 cpac trust firefox
 ```
 
-Currently implemented commands:
+All commands:
 
 ```bash
-cpac search <query>
-cpac trust <package>
-cpac audit [package]
-cpac install <package>
-cpac remove <package>
-cpac update [--aur]
-cpac diff <package>
-cpac aur <enable|disable>
-cpac config
-cpac clear-cache
+cpac search <query>              # search across all sources
+cpac trust <package>             # full trust report
+cpac audit [package]             # system-wide or per-package audit
+cpac install <package>           # trust-gated install with PKGBUILD diffing
+cpac remove <package>            # trust-gated removal
+cpac update [--aur]              # refresh official + AUR databases
+cpac diff <package>              # local PKGBUILD diff
+cpac config show                 # show current configuration
+cpac config set aur on|off       # enable/disable AUR
+cpac config set consent ...      # set data sharing level
+cpac config set cache ...        # set auto-clear interval
+cpac config reset                # reset to defaults
+cpac config path                 # show config file location
+cpac clear-cache                 # manually clear cache
 ```
+
+## First Run
+
+On first launch, CPAC asks about crowdsourced data sharing (opt-in, anonymous). This can be changed anytime via `cpac config set consent`.
+
+## Auto Cache Clearing
+
+CPAC automatically clears its metadata cache on a configurable interval (daily/weekly/monthly, default monthly). Set it with `cpac config set cache`.
 
 ## Requirements
 
@@ -78,7 +90,7 @@ cpac clear-cache
 
 ## Trust Scoring
 
-The Week 1 trust algorithm uses metadata available from official repositories and the AUR:
+The trust algorithm uses metadata available from official repositories and the AUR:
 
 - repository source
 - package age
@@ -86,6 +98,7 @@ The Week 1 trust algorithm uses metadata available from official repositories an
 - votes/popularity
 - update recency
 - out-of-date and orphan status
+- PKGBUILD diff results
 
 See [docs/trust-algorithm.md](docs/trust-algorithm.md) for details.
 
