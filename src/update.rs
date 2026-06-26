@@ -5,6 +5,7 @@ use crate::{
     backends::install::{ensure_sudo, update_databases},
     cache::Cache,
     config,
+    trust_db,
 };
 
 /// Run the update command.
@@ -33,6 +34,17 @@ pub fn run(cache: &Cache, force_aur: bool) -> Result<()> {
         .context("Failed to clear cached package metadata after update")?;
 
     println!("Cleared cached package metadata.");
+
+    // Sync trust database
+    println!("Syncing trust database...");
+    match trust_db::sync() {
+        Ok(result) => println!("{}", result),
+        Err(e) => {
+            eprintln!("Warning: Trust database sync failed: {}", e);
+            eprintln!("Continuing with local cache.");
+        }
+    }
+
     println!("Update complete.");
     Ok(())
 }

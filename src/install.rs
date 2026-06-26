@@ -7,10 +7,16 @@ use crate::{
     prompt,
     resolver,
     trust::{self, analyze_pkgbuild_diff, cache_pkgbuild, diff_to_signals, get_cached_pkgbuild},
+    trust_db,
 };
 
 /// Run the install command.
 pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<()> {
+    // Check if trust database is stale (lightweight meta check)
+    if trust_db::check_staleness()? {
+        eprintln!("Note: Trust database is out of date. Run 'cpac update' to sync latest advisories.");
+    }
+
     // Resolve the package
     let Some(pkg) = resolver::resolve(cache, package)? else {
         bail!(

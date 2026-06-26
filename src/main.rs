@@ -10,6 +10,7 @@ mod prompt;
 mod remove;
 mod resolver;
 mod trust;
+mod trust_db;
 mod update;
 
 use anyhow::Result;

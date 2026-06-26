@@ -256,6 +256,21 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         total -= 10;
     }
 
+    // --- Signal 7: Security Advisory ---
+    if let Ok(Some(advisory)) = crate::trust_db::lookup_advisory(&pkg.name) {
+        let penalty = crate::trust_db::advisory_penalty(&advisory);
+        signals.push(TrustSignal {
+            name: "Security Advisory".to_string(),
+            points: penalty,
+            max_points: 0,
+            detail: format!(
+                "{} ({}) — {}",
+                advisory.severity, advisory.status, advisory.summary
+            ),
+        });
+        total += penalty;
+    }
+
     // Count unknown vs negative signals
     let unknown_count = [
         age_unknown,
