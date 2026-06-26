@@ -9,6 +9,7 @@ mod install;
 mod prompt;
 mod remove;
 mod resolver;
+mod sanitize;
 mod trust;
 mod trust_db;
 mod update;
