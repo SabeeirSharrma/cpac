@@ -4,25 +4,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
-const TRUST_DB_BASE_URL: &str = "https://thecinderproject.qd.je/cpac-trust-db/api";
-
-/// Meta information about the trust database state.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrustDbMeta {
-    pub version: String,
-    pub updated_at: String,
-    pub advisory_count: u32,
-    pub snapshot_package_count: u32,
-    pub schema_version: u32,
-}
-
-/// Local meta state stored in ~/.cpac/trust-db/meta.toml
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LocalMeta {
-    pub version: String,
-    pub last_sync: String,
-    pub schema_version: u32,
-}
+const SUPABASE_URL: &str = "https://qzhhsyucnlswmsvpssdh.supabase.co";
+const SUPABASE_ANON_KEY: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6aGhzeXVjbmxzd21zdnBzc2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NzE1NDQsImV4cCI6MjA5ODA0NzU0NH0.sIQobt0xfnMsgthGLJUb1S8f1yisDcavtRoWzi7y4OA";
 
 /// An advisory from the trust database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,30 +21,31 @@ pub struct Advisory {
     pub summary: String,
     pub description: String,
     #[serde(default)]
-    pub affected_versions: Vec<String>,
+    pub affected_versions: serde_json::Value,
     #[serde(default)]
-    pub safe_versions: Vec<String>,
+    pub safe_versions: serde_json::Value,
     #[serde(default)]
-    pub reference_urls: Vec<String>,
+    pub reference_urls: serde_json::Value,
 }
 
 /// A snapshot entry from the trust database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SnapshotEntry {
+    pub package: String,
     pub version: String,
     pub sha256: String,
-    pub submitted_count: u32,
+    pub submitted_count: i64,
     pub first_seen: String,
     pub last_seen: String,
 }
 
-/// Delta response containing changed records since a timestamp.
+/// Local meta state stored in ~/.cpac/trust-db/meta.toml
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeltaResponse {
-    #[serde(default)]
-    pub advisories: Vec<Advisory>,
-    #[serde(default)]
-    pub snapshots: Vec<SnapshotEntry>,
+pub struct LocalMeta {
+    pub version: String,
+    pub last_sync: String,
+    pub advisory_count: usize,
+    pub snapshot_count: usize,
 }
 
 /// Get the path to the trust-db local cache directory.
@@ -85,7 +69,15 @@ fn snapshots_path() -> Result<PathBuf> {
     Ok(trust_db_dir()?.join("snapshots.json"))
 }
 
-/// Load local meta state, or return None if not initialized.
+/// Build a reqwest client with Supabase headers.
+fn supabase_client(timeout: Duration) -> Result<reqwest::blocking::Client> {
+    reqwest::blocking::Client::builder()
+        .timeout(timeout)
+        .build()
+        .context("Failed to create HTTP client")
+}
+
+/// Load local meta state.
 pub fn load_local_meta() -> Option<LocalMeta> {
     let path = meta_path().ok()?;
     if !path.exists() {
@@ -105,96 +97,101 @@ fn save_local_meta(meta: &LocalMeta) -> Result<()> {
     Ok(())
 }
 
-/// Fetch remote meta from /api/meta.
-fn fetch_remote_meta() -> Result<TrustDbMeta> {
-    let url = format!("{}/meta", TRUST_DB_BASE_URL);
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?;
+/// Compute a simple hash from advisory + snapshot data.
+fn compute_version(advisories: &[Advisory], snapshots: &[SnapshotEntry]) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    for a in advisories {
+        a.package.hash(&mut hasher);
+        a.severity.hash(&mut hasher);
+        a.status.hash(&mut hasher);
+        a.updated.hash(&mut hasher);
+    }
+    for s in snapshots {
+        s.package.hash(&mut hasher);
+        s.version.hash(&mut hasher);
+        s.sha256.hash(&mut hasher);
+        s.submitted_count.hash(&mut hasher);
+    }
+    format!("{:016x}", hasher.finish())
+}
+
+/// Fetch all advisories from Supabase.
+fn fetch_advisories() -> Result<Vec<Advisory>> {
+    let url = format!("{}/rest/v1/advisories?select=*", SUPABASE_URL);
+    let client = supabase_client(Duration::from_secs(15))?;
 
     let response = client
         .get(&url)
+        .header("apikey", SUPABASE_ANON_KEY)
+        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
         .send()
         .context("Failed to connect to trust-db server")?
         .error_for_status()
         .context("Trust-db server returned an error")?;
 
-    let meta: TrustDbMeta = response.json().context("Failed to parse trust-db meta")?;
-    Ok(meta)
+    let advisories: Vec<Advisory> = response.json().context("Failed to parse advisories")?;
+    Ok(advisories)
 }
 
-/// Check if the local cache is stale by comparing version hashes.
+/// Fetch all snapshots from Supabase.
+fn fetch_snapshots() -> Result<Vec<SnapshotEntry>> {
+    let url = format!("{}/rest/v1/snapshots?select=*", SUPABASE_URL);
+    let client = supabase_client(Duration::from_secs(15))?;
+
+    let response = client
+        .get(&url)
+        .header("apikey", SUPABASE_ANON_KEY)
+        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .send()
+        .context("Failed to connect to trust-db server")?
+        .error_for_status()
+        .context("Trust-db server returned an error")?;
+
+    let snapshots: Vec<SnapshotEntry> = response.json().context("Failed to parse snapshots")?;
+    Ok(snapshots)
+}
+
+/// Check if the local cache is stale.
 /// Returns true if a sync is needed.
 pub fn check_staleness() -> Result<bool> {
-    let remote = match fetch_remote_meta() {
-        Ok(meta) => meta,
+    // Quick check: try fetching advisories with a short timeout
+    let advisories = match fetch_advisories() {
+        Ok(a) => a,
         Err(e) => {
-            // Network error — use local cache if available
             eprintln!("Warning: Could not reach trust-db server: {}", e);
-            return Ok(false); // Not stale, just unavailable
+            return Ok(false);
         }
     };
 
-    match load_local_meta() {
-        Some(local) => Ok(local.version != remote.version),
-        None => Ok(true), // No local cache — needs full sync
+    let local = load_local_meta();
+    match local {
+        Some(meta) => {
+            // Check if advisory count changed
+            Ok(meta.advisory_count != advisories.len())
+        }
+        None => Ok(true), // No local cache — needs sync
     }
 }
 
-/// Perform a delta sync if the local cache is stale.
-/// This is called during `cpac update`.
+/// Perform a full sync from Supabase to local cache.
 pub fn sync() -> Result<SyncResult> {
-    let remote = match fetch_remote_meta() {
-        Ok(meta) => meta,
+    let advisories = match fetch_advisories() {
+        Ok(a) => a,
         Err(e) => {
             eprintln!("Warning: Could not reach trust-db server: {}", e);
             return Ok(SyncResult::Skipped);
         }
     };
 
-    let local = load_local_meta();
-
-    // Check if sync is needed
-    if let Some(ref local) = local {
-        if local.version == remote.version {
-            return Ok(SyncResult::AlreadyCurrent);
-        }
-    }
-
-    // Perform delta or full sync
-    if let Some(ref local) = local {
-        // Delta sync
-        match delta_sync(&local.last_sync) {
-            Ok(delta) => {
-                merge_delta(&delta)?;
-                save_local_meta(&LocalMeta {
-                    version: remote.version,
-                    last_sync: chrono::Utc::now().to_rfc3339(),
-                    schema_version: remote.schema_version,
-                })?;
-                Ok(SyncResult::DeltaSynced {
-                    advisories: delta.advisories.len(),
-                    snapshots: delta.snapshots.len(),
-                })
-            }
-            Err(e) => {
-                eprintln!("Warning: Delta sync failed, falling back to full sync: {}", e);
-                full_sync(&remote)
-            }
-        }
-    } else {
-        // Full sync
-        full_sync(&remote)
-    }
-}
-
-/// Perform a full sync of all data.
-fn full_sync(remote: &TrustDbMeta) -> Result<SyncResult> {
-    // Fetch all advisories
-    let advisories = fetch_all_advisories()?;
-    let snapshots = fetch_all_snapshots()?;
+    let snapshots = fetch_snapshots().unwrap_or_default();
 
     // Save to local cache
+    let dir = trust_db_dir()?;
+    fs::create_dir_all(&dir)?;
+
     let advisories_data = serde_json::to_string(&advisories)?;
     fs::write(advisories_path()?, advisories_data)?;
 
@@ -202,108 +199,18 @@ fn full_sync(remote: &TrustDbMeta) -> Result<SyncResult> {
     fs::write(snapshots_path()?, snapshots_data)?;
 
     // Save meta
+    let version = compute_version(&advisories, &snapshots);
     save_local_meta(&LocalMeta {
-        version: remote.version.clone(),
+        version,
         last_sync: chrono::Utc::now().to_rfc3339(),
-        schema_version: remote.schema_version,
+        advisory_count: advisories.len(),
+        snapshot_count: snapshots.len(),
     })?;
 
-    Ok(SyncResult::FullSynced {
+    Ok(SyncResult::Synced {
         advisories: advisories.len(),
         snapshots: snapshots.len(),
     })
-}
-
-/// Fetch delta changes since a timestamp.
-fn delta_sync(since: &str) -> Result<DeltaResponse> {
-    let url = format!("{}/delta?since={}", TRUST_DB_BASE_URL, since);
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
-
-    let response = client
-        .get(&url)
-        .send()
-        .context("Failed to fetch delta from trust-db")?
-        .error_for_status()?;
-
-    let delta: DeltaResponse = response.json().context("Failed to parse delta response")?;
-    Ok(delta)
-}
-
-/// Merge delta changes into local cache.
-fn merge_delta(delta: &DeltaResponse) -> Result<()> {
-    // Merge advisories
-    if !delta.advisories.is_empty() {
-        let mut local: Vec<Advisory> = fs::read(advisories_path()?)
-            .ok()
-            .and_then(|data| serde_json::from_slice(&data).ok())
-            .unwrap_or_default();
-
-        for advisory in &delta.advisories {
-            local.retain(|a| a.package != advisory.package);
-            local.push(advisory.clone());
-        }
-
-        let data = serde_json::to_string(&local)?;
-        fs::write(advisories_path()?, data)?;
-    }
-
-    // Merge snapshots
-    if !delta.snapshots.is_empty() {
-        let mut local: Vec<SnapshotEntry> = fs::read(snapshots_path()?)
-            .ok()
-            .and_then(|data| serde_json::from_slice(&data).ok())
-            .unwrap_or_default();
-
-        for snapshot in &delta.snapshots {
-            local.retain(|s| {
-                !(s.version == snapshot.version && s.sha256 == snapshot.sha256)
-            });
-            local.push(snapshot.clone());
-        }
-
-        let data = serde_json::to_string(&local)?;
-        fs::write(snapshots_path()?, data)?;
-    }
-
-    Ok(())
-}
-
-/// Fetch all advisories from the server.
-fn fetch_all_advisories() -> Result<Vec<Advisory>> {
-    let url = format!("{}/advisories", TRUST_DB_BASE_URL);
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
-
-    let response = client
-        .get(&url)
-        .send()
-        .context("Failed to fetch advisories")?
-        .error_for_status()?;
-
-    let advisories: Vec<Advisory> = response.json().context("Failed to parse advisories")?;
-    Ok(advisories)
-}
-
-/// Fetch all snapshots from the server.
-fn fetch_all_snapshots() -> Result<Vec<SnapshotEntry>> {
-    // Snapshots are per-package, so we'd need to know which packages to fetch.
-    // For now, we'll fetch a list of packages with snapshots.
-    let url = format!("{}/snapshots", TRUST_DB_BASE_URL);
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
-
-    let response = client
-        .get(&url)
-        .send()
-        .context("Failed to fetch snapshots")?
-        .error_for_status()?;
-
-    let snapshots: Vec<SnapshotEntry> = response.json().context("Failed to parse snapshots")?;
-    Ok(snapshots)
 }
 
 /// Look up an advisory for a specific package from local cache.
@@ -330,7 +237,7 @@ pub fn lookup_snapshots(package: &str) -> Result<Vec<SnapshotEntry>> {
     let data = fs::read(path)?;
     let all: Vec<SnapshotEntry> = serde_json::from_slice(&data)?;
 
-    Ok(all.into_iter().filter(|s| s.version == package).collect())
+    Ok(all.into_iter().filter(|s| s.package == package).collect())
 }
 
 /// Get the trust penalty for an advisory based on severity.
@@ -373,26 +280,15 @@ pub fn advisory_floor(advisory: &Advisory) -> &'static str {
 /// Result of a sync operation.
 #[derive(Debug)]
 pub enum SyncResult {
-    AlreadyCurrent,
     Skipped,
-    DeltaSynced { advisories: usize, snapshots: usize },
-    FullSynced { advisories: usize, snapshots: usize },
+    Synced { advisories: usize, snapshots: usize },
 }
 
 impl std::fmt::Display for SyncResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SyncResult::AlreadyCurrent => write!(f, "Trust database is already up to date"),
             SyncResult::Skipped => write!(f, "Trust database sync skipped (server unavailable)"),
-            SyncResult::DeltaSynced {
-                advisories,
-                snapshots,
-            } => write!(
-                f,
-                "Trust database updated: {} advisories, {} snapshots",
-                advisories, snapshots
-            ),
-            SyncResult::FullSynced {
+            SyncResult::Synced {
                 advisories,
                 snapshots,
             } => write!(
