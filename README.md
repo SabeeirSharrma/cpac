@@ -106,4 +106,4 @@ See [docs/trust-algorithm.md](docs/trust-algorithm.md) for details.
 
 **Developer/Maintainer: [Sabeeir Sharrma](https://github.com/SabeeirSharrma)**
 
-**Made under [The Cinder Project - Making a safer internet](https://thecinderproject.qd.je/)**
+**Made under [The Cinder Project - Burn all the Blind Spots](https://thecinderproject.qd.je/)**
