@@ -4,6 +4,7 @@ use crate::{
     backends::install::{ensure_sudo, install_package, select_backend, update_databases},
     backends::{PackageInfo, PackageSource},
     cache::Cache,
+    compare,
     prompt,
     resolver,
     trust::{self, analyze_pkgbuild_diff, cache_pkgbuild, diff_to_signals, get_cached_pkgbuild},
@@ -51,6 +52,23 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
     // Show trust analysis (unless forced)
     if !force {
         let mut report = trust::analyze(cache, &pkg);
+
+        // Fast consensus check against community snapshots
+        if let Ok(Some(pkgbuild)) = fetch_pkgbuild_for_install(&pkg) {
+            let comparison = compare::compare_pkgbuild(&pkgbuild, &pkg.name, &pkg.version);
+            let adj = compare::consensus_adjustment(comparison.verdict);
+            if adj != 0 {
+                report.signals.push(trust::TrustSignal {
+                    name: "Community Consensus".to_string(),
+                    points: adj,
+                    max_points: 0,
+                    detail: comparison.explanation,
+                });
+                let total: i32 = report.signals.iter().map(|s| s.points).sum();
+                report.score = total.clamp(0, 100) as u32;
+                report.recommendation = trust::recommendation(report.score).to_string();
+            }
+        }
 
         // For upgrades, check for PKGBUILD diff
         if resolver::is_installed(package)? {

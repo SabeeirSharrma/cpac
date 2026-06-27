@@ -240,6 +240,21 @@ pub fn lookup_snapshots(package: &str) -> Result<Vec<SnapshotEntry>> {
     Ok(all.into_iter().filter(|s| s.package == package).collect())
 }
 
+/// Look up snapshots for a specific package+version from local cache.
+pub fn lookup_snapshots_for_version(package: &str, version: &str) -> Result<Vec<SnapshotEntry>> {
+    let path = snapshots_path()?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+
+    let data = fs::read(path)?;
+    let all: Vec<SnapshotEntry> = serde_json::from_slice(&data)?;
+
+    Ok(all.into_iter()
+        .filter(|s| s.package == package && s.version == version)
+        .collect())
+}
+
 /// Get the trust penalty for an advisory based on severity.
 pub fn advisory_penalty(advisory: &Advisory) -> i32 {
     match advisory.severity.as_str() {

@@ -145,11 +145,10 @@ fn is_public_email(email: &str) -> bool {
 
 /// Compute SHA-256 hash of content.
 pub fn sha256_hash(content: &str) -> String {
-    use std::hash::{Hash, Hasher};
-    // Simple hash for now — use a proper SHA-256 library in production
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    content.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    use sha2::{Sha256, Digest};
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 #[cfg(test)]

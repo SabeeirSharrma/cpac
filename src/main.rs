@@ -2,6 +2,7 @@ mod audit;
 mod backends;
 mod cache;
 mod cli;
+mod compare;
 mod config;
 mod diff;
 mod display;
