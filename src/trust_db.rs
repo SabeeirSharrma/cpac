@@ -241,6 +241,7 @@ pub fn lookup_snapshots(package: &str) -> Result<Vec<SnapshotEntry>> {
 }
 
 /// Look up snapshots for a specific package+version from local cache.
+#[allow(dead_code)]
 pub fn lookup_snapshots_for_version(package: &str, version: &str) -> Result<Vec<SnapshotEntry>> {
     let path = snapshots_path()?;
     if !path.exists() {
@@ -253,6 +254,42 @@ pub fn lookup_snapshots_for_version(package: &str, version: &str) -> Result<Vec<
     Ok(all.into_iter()
         .filter(|s| s.package == package && s.version == version)
         .collect())
+}
+
+/// Submit a snapshot to the trust database.
+///
+/// POSTs to the Supabase REST API. Uses the anon key (RLS policies allow inserts).
+/// On conflict (same package+version+sha256), increments submitted_count.
+pub fn submit_snapshot(package: &str, version: &str, sha256: &str) -> Result<()> {
+    let url = format!("{}/rest/v1/snapshots", SUPABASE_URL);
+    let client = supabase_client(Duration::from_secs(10))?;
+
+    let body = serde_json::json!({
+        "package": package,
+        "version": version,
+        "sha256": sha256,
+        "submitted_count": 1,
+        "first_seen": chrono::Utc::now().to_rfc3339(),
+        "last_seen": chrono::Utc::now().to_rfc3339(),
+    });
+
+    let response = client
+        .post(&url)
+        .header("apikey", SUPABASE_ANON_KEY)
+        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .header("Content-Type", "application/json")
+        .header("Prefer", "resolution=merge-duplicates")
+        .json(&body)
+        .send()
+        .context("Failed to connect to trust-db server for submission")?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        let status = response.status();
+        let body_text = response.text().unwrap_or_default();
+        anyhow::bail!("Trust-db submission failed ({}): {}", status, body_text)
+    }
 }
 
 /// Get the trust penalty for an advisory based on severity.

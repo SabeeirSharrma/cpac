@@ -50,6 +50,7 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
     }
 
     // Show trust analysis (unless forced)
+    let mut submit_snapshot: Option<(String, String, String)> = None; // (package, version, hash)
     if !force {
         let mut report = trust::analyze(cache, &pkg);
 
@@ -73,7 +74,14 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
                 report.recommendation = trust::recommendation(report.score).to_string();
             }
 
-            // TODO: If preflight.should_submit, queue for batch submission on cpac update
+            // Queue snapshot submission for after successful install
+            if preflight.should_submit {
+                submit_snapshot = Some((
+                    preflight.package.clone(),
+                    preflight.incoming_version.clone(),
+                    preflight.incoming_hash.clone(),
+                ));
+            }
         }
 
         // For upgrades, check for PKGBUILD diff
@@ -124,6 +132,14 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
     // Cache the PKGBUILD for future diffing
     if let Ok(Some(pkgbuild)) = fetch_pkgbuild_for_install(&pkg) {
         let _ = cache_pkgbuild(cache, package, &pkgbuild);
+    }
+
+    // Submit snapshot to trust DB (after successful install, best-effort)
+    if let Some((pkg, ver, hash)) = submit_snapshot {
+        match trust_db::submit_snapshot(&pkg, &ver, &hash) {
+            Ok(()) => println!("Snapshot submitted to trust DB."),
+            Err(e) => eprintln!("Note: Snapshot submission failed (non-critical): {}", e),
+        }
     }
 
     println!("Successfully installed '{}'", package);

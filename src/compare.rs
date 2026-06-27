@@ -234,13 +234,13 @@ fn advisory_safe_versions(adv: &Advisory) -> Vec<String> {
 /// Compute the final verdict, score adjustment, and explanation.
 #[allow(clippy::too_many_arguments)]
 fn compute_verdict(
-    hash: &str,
+    _hash: &str,
     matches_consensus: bool,
     majority_submissions: usize,
     total_submissions: usize,
     hash_known: bool,
     hash_submissions: usize,
-    is_latest: bool,
+    _is_latest: bool,
     is_outdated: bool,
     is_unknown_version: bool,
     version_affected: bool,
@@ -309,7 +309,6 @@ fn compute_verdict(
         (_, _, true, _) => Verdict::Outdated,
         (false, false, false, true) => Verdict::Unknown,
         (false, false, false, false) => Verdict::Clean,
-        _ => Verdict::Mixed,
     };
 
     let total_adj: i32 = adjustments.iter().sum();

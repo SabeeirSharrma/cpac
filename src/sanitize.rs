@@ -3,6 +3,7 @@ use std::net::IpAddr;
 
 /// Result of sanitizing a PKGBUILD.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct SanitizedPkgbuild {
     /// The sanitized PKGBUILD text (safe for submission).
     pub text: String,
@@ -21,6 +22,7 @@ pub struct SanitizedPkgbuild {
 /// - Non-public email addresses
 ///
 /// Redacted segments are replaced with placeholders to preserve diff structure.
+#[allow(dead_code)]
 pub fn sanitize_pkgbuild(content: &str) -> SanitizedPkgbuild {
     let home = dirs::home_dir().map(|p| p.to_string_lossy().to_string());
     let hostname = hostname::get()
@@ -112,6 +114,7 @@ pub fn sanitize_pkgbuild(content: &str) -> SanitizedPkgbuild {
 }
 
 /// Check if an IP address is private/internal (RFC 1918, loopback, link-local).
+#[allow(dead_code)]
 fn is_private_ip(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
@@ -126,6 +129,7 @@ fn is_private_ip(ip: &IpAddr) -> bool {
 }
 
 /// Check if an email is from a public/maintainer domain (safe to keep).
+#[allow(dead_code)]
 fn is_public_email(email: &str) -> bool {
     let public_domains = [
         "archlinux.org",
