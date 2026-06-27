@@ -53,12 +53,16 @@ On first launch, CPAC asks about crowdsourced data sharing (opt-in, anonymous). 
 
 ## Trust DB Integration
 
-CPAC connects directly to the cpac-trust-db backend for real-time trust data:
+CPAC connects to the cpac-trust-db backend via a Cloudflare Worker proxy at `api.thecinderproject.qd.je` for real-time trust data:
 - **Advisory warnings** — color-coded alerts when installing known-malicious packages
 - **Snapshot submissions** — anonymized PKGBUILD data shared with the community (consent-aware)
 - **Auto-sync** — trust data refreshes automatically when stale
 
 Data is stored locally at `~/.cpac/trust-db/` for offline use.
+
+## Releases
+
+Pre-built binaries are available for x86_64 and aarch64 Linux on [GitHub Releases](https://github.com/SabeeirSharrma/cpac/releases). Each release includes SHA-256 checksums.
 
 ## Auto Cache Clearing
 

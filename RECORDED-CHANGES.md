@@ -2,15 +2,15 @@
 
 ## Overview
 
-Version 0.7.0 integrates the cpac-trust-db directly into CPAC. CPAC now talks to Supabase for real-time advisory warnings, performs two-pass PKGBUILD sanitization before submission, detects anomalies, submits snapshots with consent-aware privacy controls, and ships a transparent build-from-source installer. The release workflow builds x86_64 and aarch64 binaries with rustls-tls (no OpenSSL dependency).
+Version 0.7.0 integrates the cpac-trust-db into CPAC via a Cloudflare Worker proxy at `api.thecinderproject.qd.je`. CPAC performs two-pass PKGBUILD sanitization before submission, detects anomalies, submits snapshots with consent-aware privacy controls, and ships a transparent build-from-source installer. The release workflow builds x86_64 and aarch64 binaries with rustls-tls (no OpenSSL dependency).
 
 ---
 
 ## Changes
 
-### Trust DB Direct Integration
+### Trust DB Integration via API Proxy
 
-CPAC communicates directly with the Supabase trust DB backend via REST API. No proxy or custom domain needed. The `trust_db` module handles:
+CPAC communicates with the trust DB backend through a Cloudflare Worker proxy at `api.thecinderproject.qd.je/cpac-trust-db/api/*`. The worker forwards requests to Supabase, handling CORS and auth headers. The `trust_db` module handles:
 - Meta check (staleness detection) on every `cpac install` and `cpac update`
 - Auto-sync when data is stale (>24 hours)
 - Delta sync for lightweight incremental updates (`updated_at > last_sync`)
@@ -121,7 +121,7 @@ Switched reqwest from native-tls to rustls-tls, eliminating the OpenSSL cross-co
 
 - `Cargo.toml` — version bump to 0.7.0, reqwest rustls-tls, new deps (regex, hostname, sha2, uuid)
 - `Cargo.lock` — updated dependency tree
-- `src/trust_db.rs` — Supabase REST client, meta check, delta sync, snapshot submission, pending queue, anonymous tokens
+- `src/trust_db.rs` — API proxy client (api.thecinderproject.qd.je), meta check, delta sync, snapshot submission, pending queue, anonymous tokens
 - `src/compare.rs` — pre-flight intelligence check with verdicts
 - `src/sanitize.rs` — Pass 1 structural redaction + Pass 2 anomaly detection (8 categories, 6 tests)
 - `src/trust/mod.rs` — advisory signal in trust scoring

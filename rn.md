@@ -2,13 +2,13 @@
 
 ## Overview
 
-v0.7.0 integrates the cpac-trust-db directly into CPAC, adding real-time advisory warnings, PKGBUILD sanitization, anomaly detection, snapshot submission, and a transparent curl-based installer. CPAC now talks directly to Supabase for trust data — no proxy required.
+v0.7.0 integrates the cpac-trust-db into CPAC via a Cloudflare Worker proxy at `api.thecinderproject.qd.je`, adding real-time advisory warnings, PKGBUILD sanitization, anomaly detection, snapshot submission, and a transparent curl-based installer.
 
 ## New Features
 
-### Direct Supabase Integration
+### Trust DB Integration via API Proxy
 
-CPAC now communicates directly with the Supabase trust DB backend via REST API:
+CPAC communicates with the trust DB backend through a Cloudflare Worker proxy at `api.thecinderproject.qd.je`:
 - Meta check (staleness detection) on every `cpac install` and `cpac update`
 - Auto-sync when data is stale (>24 hours)
 - Delta sync for lightweight incremental updates
@@ -125,7 +125,7 @@ See v0.6.0 section below for config subcommands, auto cache, AUR failure handlin
 
 ### v0.7.0
 
-- Trust DB direct integration (Supabase REST API)
+- Trust DB integration via API proxy
 - Advisory warnings with color-coded severity
 - PKGBUILD sanitization (2 passes, 8 anomaly categories)
 - SHA-256 hashing for fast consensus
