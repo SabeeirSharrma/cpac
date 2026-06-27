@@ -4,8 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
-const SUPABASE_URL: &str = "https://qzhhsyucnlswmsvpssdh.supabase.co";
-const SUPABASE_ANON_KEY: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6aGhzeXVjbmxzd21zdnBzc2RoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NzE1NDQsImV4cCI6MjA5ODA0NzU0NH0.sIQobt0xfnMsgthGLJUb1S8f1yisDcavtRoWzi7y4OA";
+const API_URL: &str = "https://api.thecinderproject.qd.je/cpac-trust-db/api";
 
 /// An advisory from the trust database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,15 +119,14 @@ fn compute_version(advisories: &[Advisory], snapshots: &[SnapshotEntry]) -> Stri
     format!("{:016x}", hasher.finish())
 }
 
-/// Fetch all advisories from Supabase.
+/// Fetch all advisories from the trust-db API.
 fn fetch_advisories() -> Result<Vec<Advisory>> {
-    let url = format!("{}/rest/v1/advisories?select=*", SUPABASE_URL);
+    let url = format!("{}/advisories", API_URL);
     let client = supabase_client(Duration::from_secs(15))?;
 
     let response = client
         .get(&url)
-        .header("apikey", SUPABASE_ANON_KEY)
-        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .header("Content-Type", "application/json")
         .send()
         .context("Failed to connect to trust-db server")?
         .error_for_status()
@@ -138,15 +136,14 @@ fn fetch_advisories() -> Result<Vec<Advisory>> {
     Ok(advisories)
 }
 
-/// Fetch all snapshots from Supabase.
+/// Fetch all snapshots from the trust-db API.
 fn fetch_snapshots() -> Result<Vec<SnapshotEntry>> {
-    let url = format!("{}/rest/v1/snapshots?select=*", SUPABASE_URL);
+    let url = format!("{}/snapshots", API_URL);
     let client = supabase_client(Duration::from_secs(15))?;
 
     let response = client
         .get(&url)
-        .header("apikey", SUPABASE_ANON_KEY)
-        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .header("Content-Type", "application/json")
         .send()
         .context("Failed to connect to trust-db server")?
         .error_for_status()
@@ -232,15 +229,14 @@ pub fn sync() -> Result<SyncResult> {
 /// Fetch advisories updated since a given timestamp (for delta sync).
 fn fetch_advisories_since(since: &str) -> Result<Vec<Advisory>> {
     let url = format!(
-        "{}/rest/v1/advisories?select=*&updated_at=gt.{}",
-        SUPABASE_URL, since
+        "{}/advisories?updated_at=gt.{}",
+        API_URL, since
     );
     let client = supabase_client(Duration::from_secs(15))?;
 
     let response = client
         .get(&url)
-        .header("apikey", SUPABASE_ANON_KEY)
-        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .header("Content-Type", "application/json")
         .send()
         .context("Failed to connect to trust-db server for delta")?
         .error_for_status()
@@ -253,15 +249,14 @@ fn fetch_advisories_since(since: &str) -> Result<Vec<Advisory>> {
 /// Fetch snapshots updated since a given timestamp (for delta sync).
 fn fetch_snapshots_since(since: &str) -> Result<Vec<SnapshotEntry>> {
     let url = format!(
-        "{}/rest/v1/snapshots?select=*&last_seen=gt.{}",
-        SUPABASE_URL, since
+        "{}/snapshots?last_seen=gt.{}",
+        API_URL, since
     );
     let client = supabase_client(Duration::from_secs(15))?;
 
     let response = client
         .get(&url)
-        .header("apikey", SUPABASE_ANON_KEY)
-        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .header("Content-Type", "application/json")
         .send()
         .context("Failed to connect to trust-db server for delta")?
         .error_for_status()
@@ -394,13 +389,14 @@ pub fn lookup_snapshots_for_version(package: &str, version: &str) -> Result<Vec<
         .collect())
 }
 
-/// Submit a snapshot to the trust database.
+/// Submit a snapshot to the trust database via the API proxy.
 ///
-/// POSTs to the Supabase REST API. Uses the anon key (RLS policies allow inserts).
+/// POSTs to the API proxy which forwards to Supabase.
+/// Uses anonymous client token for rate limiting.
 /// On conflict (same package+version+sha256), increments submitted_count.
 /// If `pkgbuild_text` is provided (consent=full), it's included in the submission.
 pub fn submit_snapshot(package: &str, version: &str, sha256: &str, pkgbuild_text: Option<&str>) -> Result<()> {
-    let url = format!("{}/rest/v1/snapshots", SUPABASE_URL);
+    let url = format!("{}/snapshots", API_URL);
     let client = supabase_client(Duration::from_secs(10))?;
     let token = get_client_token().unwrap_or_default();
 
@@ -419,8 +415,6 @@ pub fn submit_snapshot(package: &str, version: &str, sha256: &str, pkgbuild_text
 
     let response = client
         .post(&url)
-        .header("apikey", SUPABASE_ANON_KEY)
-        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
         .header("Content-Type", "application/json")
         .header("Prefer", "resolution=merge-duplicates")
         .header("X-Client-Token", &token)
