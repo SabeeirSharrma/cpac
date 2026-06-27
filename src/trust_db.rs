@@ -329,6 +329,73 @@ pub fn advisory_floor(advisory: &Advisory) -> &'static str {
     }
 }
 
+// ── Local Submission Queue ──
+
+/// A pending snapshot waiting to be submitted on next `cpac update`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingSnapshot {
+    pub package: String,
+    pub version: String,
+    pub sha256: String,
+    pub queued_at: String,
+}
+
+/// Path to the local pending submissions queue.
+fn pending_queue_path() -> Result<PathBuf> {
+    Ok(trust_db_dir()?.join("pending_snapshots.json"))
+}
+
+/// Queue a snapshot for later submission (called during install).
+#[allow(dead_code)]
+pub fn queue_snapshot(package: &str, version: &str, sha256: &str) -> Result<()> {
+    let dir = trust_db_dir()?;
+    fs::create_dir_all(&dir)?;
+
+    let mut pending = load_pending_queue().unwrap_or_default();
+    pending.push(PendingSnapshot {
+        package: package.to_string(),
+        version: version.to_string(),
+        sha256: sha256.to_string(),
+        queued_at: chrono::Utc::now().to_rfc3339(),
+    });
+
+    let data = serde_json::to_string_pretty(&pending)?;
+    fs::write(pending_queue_path()?, data)?;
+    Ok(())
+}
+
+/// Load the local pending queue.
+fn load_pending_queue() -> Result<Vec<PendingSnapshot>> {
+    let path = pending_queue_path()?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let data = fs::read(path)?;
+    Ok(serde_json::from_slice(&data)?)
+}
+
+/// Send all pending snapshots in batch (called during `cpac update`).
+/// Returns the number successfully submitted and clears the queue.
+pub fn flush_pending_queue() -> Result<usize> {
+    let pending = load_pending_queue()?;
+    if pending.is_empty() {
+        return Ok(0);
+    }
+
+    let mut success_count = 0;
+    for snapshot in &pending {
+        match submit_snapshot(&snapshot.package, &snapshot.version, &snapshot.sha256) {
+            Ok(()) => success_count += 1,
+            Err(e) => eprintln!("Warning: Failed to submit snapshot for {}: {}", snapshot.package, e),
+        }
+    }
+
+    // Clear the queue after submission attempt
+    fs::write(pending_queue_path()?, "[]")?;
+
+    Ok(success_count)
+}
+
 /// Result of a sync operation.
 #[derive(Debug)]
 pub enum SyncResult {

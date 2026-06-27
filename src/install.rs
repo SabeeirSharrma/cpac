@@ -50,7 +50,7 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
     }
 
     // Show trust analysis (unless forced)
-    let mut submit_snapshot: Option<(String, String, String)> = None; // (package, version, hash)
+    let mut pending_snapshot: Option<(String, String, String)> = None; // (package, version, hash)
     if !force {
         let mut report = trust::analyze(cache, &pkg);
 
@@ -60,6 +60,12 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
 
             // Show pre-flight report
             println!("{}", compare::format_report(&preflight));
+
+            // Show Pass 2 anomaly detection
+            let anomalies = crate::sanitize::detect_anomalies(&pkgbuild);
+            if !anomalies.is_empty() {
+                println!("{}", crate::sanitize::format_anomalies(&anomalies));
+            }
 
             // Apply score adjustment from pre-flight
             if preflight.score_adjustment != 0 {
@@ -74,9 +80,9 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
                 report.recommendation = trust::recommendation(report.score).to_string();
             }
 
-            // Queue snapshot submission for after successful install
+            // Queue snapshot for batch submission on next cpac update
             if preflight.should_submit {
-                submit_snapshot = Some((
+                pending_snapshot = Some((
                     preflight.package.clone(),
                     preflight.incoming_version.clone(),
                     preflight.incoming_hash.clone(),
@@ -134,11 +140,11 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
         let _ = cache_pkgbuild(cache, package, &pkgbuild);
     }
 
-    // Submit snapshot to trust DB (after successful install, best-effort)
-    if let Some((pkg, ver, hash)) = submit_snapshot {
-        match trust_db::submit_snapshot(&pkg, &ver, &hash) {
-            Ok(()) => println!("Snapshot submitted to trust DB."),
-            Err(e) => eprintln!("Note: Snapshot submission failed (non-critical): {}", e),
+    // Queue snapshot for batch submission on next cpac update
+    if let Some((pkg, ver, hash)) = pending_snapshot {
+        match trust_db::queue_snapshot(&pkg, &ver, &hash) {
+            Ok(()) => println!("Snapshot queued for submission on next 'cpac update'."),
+            Err(e) => eprintln!("Note: Snapshot queuing failed (non-critical): {}", e),
         }
     }
 

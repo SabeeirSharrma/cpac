@@ -45,6 +45,13 @@ pub fn run(cache: &Cache, force_aur: bool) -> Result<()> {
         }
     }
 
+    // Flush pending snapshot submissions
+    match trust_db::flush_pending_queue() {
+        Ok(0) => {}
+        Ok(n) => println!("Submitted {} snapshot(s) to trust database.", n),
+        Err(e) => eprintln!("Warning: Failed to submit pending snapshots: {}", e),
+    }
+
     println!("Update complete.");
     Ok(())
 }
