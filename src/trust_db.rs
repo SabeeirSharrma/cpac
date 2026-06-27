@@ -37,6 +37,8 @@ pub struct SnapshotEntry {
     pub submitted_count: i64,
     pub first_seen: String,
     pub last_seen: String,
+    #[serde(default)]
+    pub pkgbuild_text: Option<String>,
 }
 
 /// Local meta state stored in ~/.cpac/trust-db/meta.toml
@@ -154,10 +156,9 @@ fn fetch_snapshots() -> Result<Vec<SnapshotEntry>> {
     Ok(snapshots)
 }
 
-/// Check if the local cache is stale.
-/// Returns true if a sync is needed.
-pub fn check_staleness() -> Result<bool> {
-    // Quick check: try fetching advisories with a short timeout
+/// Check if the local cache is stale and sync if needed.
+/// Returns true if a sync was performed.
+pub fn check_and_sync_if_stale() -> Result<bool> {
     let advisories = match fetch_advisories() {
         Ok(a) => a,
         Err(e) => {
@@ -167,13 +168,28 @@ pub fn check_staleness() -> Result<bool> {
     };
 
     let local = load_local_meta();
-    match local {
-        Some(meta) => {
-            // Check if advisory count changed
-            Ok(meta.advisory_count != advisories.len())
+    let needs_sync = match local {
+        Some(ref meta) => meta.advisory_count != advisories.len(),
+        None => true,
+    };
+
+    if needs_sync {
+        eprintln!("Trust database is out of date, syncing...");
+        let result = if local.is_some() {
+            sync_delta()
+        } else {
+            sync()
+        }?;
+        match result {
+            SyncResult::Synced { advisories, snapshots } => {
+                eprintln!("Synced {} advisories, {} snapshots", advisories, snapshots);
+            }
+            SyncResult::Skipped => {}
         }
-        None => Ok(true), // No local cache — needs sync
+        return Ok(true);
     }
+
+    Ok(false)
 }
 
 /// Perform a full sync from Supabase to local cache.
@@ -382,12 +398,13 @@ pub fn lookup_snapshots_for_version(package: &str, version: &str) -> Result<Vec<
 ///
 /// POSTs to the Supabase REST API. Uses the anon key (RLS policies allow inserts).
 /// On conflict (same package+version+sha256), increments submitted_count.
-pub fn submit_snapshot(package: &str, version: &str, sha256: &str) -> Result<()> {
+/// If `pkgbuild_text` is provided (consent=full), it's included in the submission.
+pub fn submit_snapshot(package: &str, version: &str, sha256: &str, pkgbuild_text: Option<&str>) -> Result<()> {
     let url = format!("{}/rest/v1/snapshots", SUPABASE_URL);
     let client = supabase_client(Duration::from_secs(10))?;
     let token = get_client_token().unwrap_or_default();
 
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "package": package,
         "version": version,
         "sha256": sha256,
@@ -395,6 +412,10 @@ pub fn submit_snapshot(package: &str, version: &str, sha256: &str) -> Result<()>
         "first_seen": chrono::Utc::now().to_rfc3339(),
         "last_seen": chrono::Utc::now().to_rfc3339(),
     });
+
+    if let Some(text) = pkgbuild_text {
+        body["pkgbuild_text"] = serde_json::Value::String(text.to_string());
+    }
 
     let response = client
         .post(&url)
@@ -462,6 +483,8 @@ pub struct PendingSnapshot {
     pub version: String,
     pub sha256: String,
     pub queued_at: String,
+    #[serde(default)]
+    pub pkgbuild_text: Option<String>,
 }
 
 /// Path to the local pending submissions queue.
@@ -497,7 +520,7 @@ pub fn get_client_token() -> Result<String> {
 
 /// Queue a snapshot for later submission (called during install).
 #[allow(dead_code)]
-pub fn queue_snapshot(package: &str, version: &str, sha256: &str) -> Result<()> {
+pub fn queue_snapshot(package: &str, version: &str, sha256: &str, pkgbuild_text: Option<String>) -> Result<()> {
     let dir = trust_db_dir()?;
     fs::create_dir_all(&dir)?;
 
@@ -507,6 +530,7 @@ pub fn queue_snapshot(package: &str, version: &str, sha256: &str) -> Result<()> 
         version: version.to_string(),
         sha256: sha256.to_string(),
         queued_at: chrono::Utc::now().to_rfc3339(),
+        pkgbuild_text,
     });
 
     let data = serde_json::to_string_pretty(&pending)?;
@@ -534,7 +558,8 @@ pub fn flush_pending_queue() -> Result<usize> {
 
     let mut success_count = 0;
     for snapshot in &pending {
-        match submit_snapshot(&snapshot.package, &snapshot.version, &snapshot.sha256) {
+        let pkgbuild = snapshot.pkgbuild_text.as_deref();
+        match submit_snapshot(&snapshot.package, &snapshot.version, &snapshot.sha256, pkgbuild) {
             Ok(()) => success_count += 1,
             Err(e) => eprintln!("Warning: Failed to submit snapshot for {}: {}", snapshot.package, e),
         }

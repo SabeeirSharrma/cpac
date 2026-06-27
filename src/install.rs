@@ -5,6 +5,7 @@ use crate::{
     backends::{PackageInfo, PackageSource},
     cache::Cache,
     compare,
+    config,
     prompt,
     resolver,
     trust::{self, analyze_pkgbuild_diff, cache_pkgbuild, diff_to_signals, get_cached_pkgbuild},
@@ -13,10 +14,8 @@ use crate::{
 
 /// Run the install command.
 pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<()> {
-    // Check if trust database is stale (lightweight meta check)
-    if trust_db::check_staleness()? {
-        eprintln!("Note: Trust database is out of date. Run 'cpac update' to sync latest advisories.");
-    }
+    // Auto-sync trust database if stale
+    let _ = trust_db::check_and_sync_if_stale();
 
     // Resolve the package
     let Some(pkg) = resolver::resolve(cache, package)? else {
@@ -50,7 +49,7 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
     }
 
     // Show trust analysis (unless forced)
-    let mut pending_snapshot: Option<(String, String, String)> = None; // (package, version, hash)
+    let mut pending_snapshot: Option<(String, String, String, Option<String>)> = None; // (package, version, hash, pkgbuild_text)
     if !force {
         let mut report = trust::analyze(cache, &pkg);
 
@@ -81,12 +80,25 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
             }
 
             // Queue snapshot for batch submission on next cpac update
+            // Respect consent level: full = sanitized PKGBUILD, hash = hash only, none = skip
             if preflight.should_submit {
-                pending_snapshot = Some((
-                    preflight.package.clone(),
-                    preflight.incoming_version.clone(),
-                    preflight.incoming_hash.clone(),
-                ));
+                let consent = config::load().map(|c| c.consent).unwrap_or_default();
+                let pkgbuild_opt = match consent {
+                    config::ConsentLevel::Full => {
+                        let sanitized = crate::sanitize::sanitize_pkgbuild(&pkgbuild);
+                        Some(sanitized.text)
+                    }
+                    _ => None, // Hash only (consent=Hash) or skip (consent=None)
+                };
+
+                if consent != config::ConsentLevel::None {
+                    pending_snapshot = Some((
+                        preflight.package.clone(),
+                        preflight.incoming_version.clone(),
+                        preflight.incoming_hash.clone(),
+                        pkgbuild_opt,
+                    ));
+                }
             }
         }
 
@@ -141,8 +153,8 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
     }
 
     // Queue snapshot for batch submission on next cpac update
-    if let Some((pkg, ver, hash)) = pending_snapshot {
-        match trust_db::queue_snapshot(&pkg, &ver, &hash) {
+    if let Some((pkg, ver, hash, pkgbuild_text)) = pending_snapshot {
+        match trust_db::queue_snapshot(&pkg, &ver, &hash, pkgbuild_text) {
             Ok(()) => println!("Snapshot queued for submission on next 'cpac update'."),
             Err(e) => eprintln!("Note: Snapshot queuing failed (non-critical): {}", e),
         }

@@ -58,8 +58,62 @@ pub fn run(cache: &Cache, force_aur: bool) -> Result<()> {
         Err(e) => eprintln!("Warning: Failed to submit pending snapshots: {}", e),
     }
 
+    // Check for advisories on installed packages (best-effort, after sync)
+    check_advisory_warnings();
+
     println!("Update complete.");
     Ok(())
+}
+
+/// Scan local advisory cache and warn about affected packages.
+fn check_advisory_warnings() {
+    use colored::Colorize;
+
+    let advisories_dir = match trust_db::trust_db_dir() {
+        Ok(dir) => dir.join("advisories.json"),
+        Err(_) => return,
+    };
+
+    if !advisories_dir.exists() {
+        return;
+    }
+
+    let data = match std::fs::read(&advisories_dir) {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+
+    let advisories: Vec<trust_db::Advisory> = match serde_json::from_slice(&data) {
+        Ok(a) => a,
+        Err(_) => return,
+    };
+
+    let active: Vec<&trust_db::Advisory> = advisories
+        .iter()
+        .filter(|a| a.status != "resolved")
+        .collect();
+
+    if active.is_empty() {
+        return;
+    }
+
+    println!("\n  {} active advisories in trust DB:", active.len());
+    for adv in &active {
+        let severity_color = match adv.severity.as_str() {
+            "critical" => adv.severity.red().bold(),
+            "high" => adv.severity.red(),
+            "medium" => adv.severity.yellow(),
+            _ => adv.severity.normal(),
+        };
+        println!(
+            "    {} {} ({}) — {}",
+            severity_color,
+            adv.package,
+            adv.severity,
+            adv.summary
+        );
+    }
+    println!();
 }
 
 /// Update AUR package databases using the available AUR helper.
