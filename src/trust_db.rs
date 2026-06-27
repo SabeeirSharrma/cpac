@@ -385,6 +385,7 @@ pub fn lookup_snapshots_for_version(package: &str, version: &str) -> Result<Vec<
 pub fn submit_snapshot(package: &str, version: &str, sha256: &str) -> Result<()> {
     let url = format!("{}/rest/v1/snapshots", SUPABASE_URL);
     let client = supabase_client(Duration::from_secs(10))?;
+    let token = get_client_token().unwrap_or_default();
 
     let body = serde_json::json!({
         "package": package,
@@ -401,6 +402,7 @@ pub fn submit_snapshot(package: &str, version: &str, sha256: &str) -> Result<()>
         .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
         .header("Content-Type", "application/json")
         .header("Prefer", "resolution=merge-duplicates")
+        .header("X-Client-Token", &token)
         .json(&body)
         .send()
         .context("Failed to connect to trust-db server for submission")?;
@@ -465,6 +467,32 @@ pub struct PendingSnapshot {
 /// Path to the local pending submissions queue.
 fn pending_queue_path() -> Result<PathBuf> {
     Ok(trust_db_dir()?.join("pending_snapshots.json"))
+}
+
+/// Path to the local client token file.
+fn token_path() -> Result<PathBuf> {
+    Ok(trust_db_dir()?.join("token"))
+}
+
+/// Get or create an anonymous client token for rate limiting.
+/// The token is a UUID generated on first run and stored locally.
+/// It's not linked to any user identity — used only for rate limiting.
+pub fn get_client_token() -> Result<String> {
+    let path = token_path()?;
+    if path.exists() {
+        let token = fs::read_to_string(&path)?;
+        let token = token.trim().to_string();
+        if !token.is_empty() {
+            return Ok(token);
+        }
+    }
+
+    // Generate new UUID token
+    let token = uuid::Uuid::new_v4().to_string();
+    let dir = trust_db_dir()?;
+    fs::create_dir_all(&dir)?;
+    fs::write(&path, &token)?;
+    Ok(token)
 }
 
 /// Queue a snapshot for later submission (called during install).
