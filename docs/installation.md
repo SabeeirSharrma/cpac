@@ -8,71 +8,56 @@ order: 2
 
 CPAC runs on any Arch-based Linux distribution, including Arch, EndeavourOS, Garuda, CachyOS, and Manjaro.
 
-To install CPAC, you can build from source (recommended) or alternatively you can install it from the AUR via yay/paru.
+## Quick Install (Recommended)
 
-## Quick Install Script (Recommended)
-
-For a quick build and install, run:
+One command to build and install cpac from source:
 
 ```bash
-$ curl -sL https://thecinderproject.qd.je/install.sh -o install.sh
-$ less install.sh   # review the script we provide you
-$ bash install.sh
+curl -sSf https://thecinderproject.qd.je/cpac/install.sh | bash
 ```
 
-This script will install **Rust+Cargo** and `cpac`, since `cpac` is dependent on **Rust+Cargo** for building from source.
+This script will:
+- Detect if Rust is already installed on your system
+- If not, install Rust temporarily just for building
+- Clone and build cpac from source
+- Install the binary to `/usr/local/bin`
+- If Rust was not present before, **automatically remove it** after installation
 
-## Building from source
-
-To build from source you must have **Rust** installed on your system, to do this you can run:
+No dependencies are left behind. The script is fully transparent — you can review it before running:
 
 ```bash
-$ sudo pacman -S rustup 
+curl -sSf https://thecinderproject.qd.je/cpac/install.sh -o install.sh
+less install.sh
+bash install.sh
 ```
 
-refresh/restart your terminal and run:
+## Building from Source
+
+If you prefer to build manually:
 
 ```bash
-$ rustup install stable
+git clone https://github.com/SabeeirSharrma/cpac.git
+cd cpac
+cargo build --release
+sudo cp target/release/cpac /usr/local/bin/cpac
 ```
 
-Then clone and build:
+## Installing from AUR
+
+> Updates to the AUR version may lag behind by up to 24 hours.
 
 ```bash
-$ git clone https://github.com/sabeeirsharrma/cpac.git
-$ cd cpac
-$ cargo build
-$ cargo install --path .
+yay -S cpac
 ```
 
-This installs the CLI binary as cpac in Cargo's bin directory, usually `~/.cargo/bin`.
-Next, to make it available system wide you must add this to ~/.bashrc or ~/.zshrc etc.
+or with paru:
 
 ```bash
-export PATH="$HOME/.cargo/bin:$PATH"
-```
-
-This will add Cargo's bin directory (where cpac is installed) to your path.
-Now you can refresh/restart your terminal and run `cpac` to test.
-
-## Installing from AUR (Using yay/paru)
-
->This will install cpac from the AUR but **updates to the AUR version may lag behind by up to 24 hours**.
-
-To directly install cpac from the AUR, run:
-
-```bash
-$ yay -S cpac
-```
-
-or if you use paru
-
-```bash
-$ paru -S cpac
+paru -S cpac
 ```
 
 > **Note:** CPAC isn't installed yet at this point, so its own trust analysis isn't
-> available to evaluate this install -- this is the one bootstrapping exception to
+> available to evaluate this install — this is the one bootstrapping exception to
 > CPAC's usual AUR-last, trust-checked install flow. Once CPAC is installed via any
 > method, all future package installs go through its normal resolution and trust scoring.
 
@@ -84,10 +69,10 @@ After installing, run:
 cpac --help
 ```
 
-If your shell prints `cpac: command not found`, Cargo's bin directory is not on your `PATH`. Add it for the current terminal session:
+If your shell prints `cpac: command not found`, add `/usr/local/bin` to your PATH:
 
 ```bash
-export PATH="$HOME/.cargo/bin:$PATH"
+export PATH="/usr/local/bin:$PATH"
 ```
 
 To make that permanent, add the same line to your shell config (`~/.bashrc`, `~/.zshrc`, etc.) and restart your terminal.

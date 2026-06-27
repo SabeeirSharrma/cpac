@@ -2,144 +2,169 @@
 set -euo pipefail
 
 # CPAC Installer
-# Downloads and installs the latest cpac binary.
-# Usage: curl -sSf https://thecinderproject.qd.je/cpac/install.sh | bash
+# Builds cpac from source and installs it to /usr/local/bin.
+# If Rust is not already installed, it installs it temporarily and removes it after.
+#
+# Usage:
+#   curl -sSf https://thecinderproject.qd.je/cpac/install.sh | bash
+#
+# Environment variables:
+#   CPAC_INSTALL_DIR  — install directory (default: /usr/local/bin)
+#   CPAC_GIT_REPO     — git repo URL (default: https://github.com/SabeeirSharrma/cpac.git)
 
-REPO="SabeeirSharrma/cpac"
+REPO="${CPAC_GIT_REPO:-https://github.com/SabeeirSharrma/cpac.git}"
 INSTALL_DIR="${CPAC_INSTALL_DIR:-/usr/local/bin}"
+BRANCH="${CPAC_BRANCH:-main}"
 
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 info()  { echo -e "${GREEN}▸${NC} $*"; }
 warn()  { echo -e "${YELLOW}▸${NC} $*"; }
 error() { echo -e "${RED}▸${NC} $*" >&2; }
+step()  { echo -e "\n${CYAN}── $* ──${NC}"; }
 
-# Detect architecture
-detect_arch() {
-    local arch
-    arch="$(uname -m)"
-    case "$arch" in
-        x86_64|amd64)  echo "x86_64" ;;
-        aarch64|arm64) echo "aarch64" ;;
-        *)
-            error "Unsupported architecture: $arch"
-            error "cpac supports x86_64 and aarch64."
-            exit 1
-            ;;
-    esac
+# ── Pre-flight: detect what's already installed ──
+
+RUST_WAS_PRESENT=0
+GIT_WAS_PRESENT=0
+
+if command -v rustc &>/dev/null && command -v cargo &>/dev/null; then
+    RUST_WAS_PRESENT=1
+    info "Rust is already installed (rustc $(rustc --version | awk '{print $2}'))"
+else
+    info "Rust is not installed — will install temporarily for building"
+fi
+
+if command -v git &>/dev/null; then
+    GIT_WAS_PRESENT=1
+    info "Git is already installed"
+else
+    info "Git is not installed — will install temporarily for cloning"
+fi
+
+# ── Helpers ──
+
+cleanup() {
+    if [ "${RUST_WAS_PRESENT}" -eq 0 ] && command -v rustup &>/dev/null; then
+        step "Cleaning up: removing temporary Rust installation"
+        rustup self uninstall -y 2>/dev/null || rm -rf "$HOME/.rustup" "$HOME/.cargo"
+        info "Rust removed"
+    fi
+
+    if [ "${GIT_WAS_PRESENT}" -eq 0 ] && command -v pacman &>/dev/null; then
+        # Only uninstall git if we installed it (check if it was pulled in as a dependency)
+        # Skip this — git is commonly needed, don't remove it
+        :
+    fi
+
+    # Always clean up build directory
+    if [ -d "${BUILD_DIR:-}" ]; then
+        rm -rf "$BUILD_DIR"
+    fi
 }
 
-# Get latest release tag from GitHub
-get_latest_version() {
-    local url="https://api.github.com/repos/${REPO}/releases/latest"
-    local version
+trap cleanup EXIT
 
-    if command -v curl &>/dev/null; then
-        version=$(curl -fsSL "$url" | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/')
-    elif command -v wget &>/dev/null; then
-        version=$(wget -qO- "$url" | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/')
+install_rust() {
+    step "Installing Rust (temporary)"
+
+    if command -v pacman &>/dev/null; then
+        sudo pacman -S --noconfirm rustup 2>/dev/null || true
+    elif command -v apt-get &>/dev/null; then
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
     else
-        error "Neither curl nor wget found. Please install one."
-        exit 1
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
     fi
 
-    if [ -z "$version" ]; then
-        error "Failed to fetch latest version from GitHub."
-        exit 1
+    # Source cargo env
+    if [ -f "$HOME/.cargo/env" ]; then
+        source "$HOME/.cargo/env"
+    elif [ -f "$HOME/.cargo/env.fish" ]; then
+        # For fish users — just set PATH directly
+        export PATH="$HOME/.cargo/bin:$PATH"
     fi
 
-    echo "$version"
+    rustup install stable 2>/dev/null || true
+    info "Rust $(rustc --version | awk '{print $2}') installed"
 }
 
-# Download file with curl or wget
-download() {
-    local url="$1"
-    local dest="$2"
+install_git() {
+    step "Installing Git (temporary)"
 
-    if command -v curl &>/dev/null; then
-        curl -fsSL -o "$dest" "$url"
-    elif command -v wget &>/dev/null; then
-        wget -qO "$dest" "$url"
+    if command -v pacman &>/dev/null; then
+        sudo pacman -S --noconfirm git
+    elif command -v apt-get &>/dev/null; then
+        sudo apt-get update -qq && sudo apt-get install -y -qq git
     else
-        error "Neither curl nor wget found."
+        error "Cannot install git automatically. Please install git and retry."
         exit 1
     fi
+
+    info "Git installed"
 }
+
+# ── Main ──
 
 main() {
     echo ""
-    echo "  CPAC Installer"
-    echo "  Community Package Analysis Client"
+    echo -e "  ${CYAN}CPAC Installer${NC}"
+    echo -e "  Build from source | github.com/SabeeirSharrma/cpac"
     echo ""
 
-    # Check if already installed
-    if command -v cpac &>/dev/null; then
-        local current_version
-        current_version=$(cpac --version 2>/dev/null | head -1 | awk '{print $2}' || true)
-        warn "cpac is already installed (version: ${current_version:-unknown})"
+    # Ensure we have git
+    if ! command -v git &>/dev/null; then
+        install_git
     fi
 
-    # Detect
-    local arch
-    arch=$(detect_arch)
-    info "Detected architecture: ${arch}"
-
-    # Get latest version
-    info "Fetching latest release..."
-    local version
-    version=$(get_latest_version)
-    info "Latest version: ${version}"
-
-    # Build download URL
-    local binary_name="cpac-${arch}-linux"
-    local download_url="https://github.com/${REPO}/releases/download/${version}/${binary_name}"
-    local checksum_url="https://github.com/${REPO}/releases/download/${version}/sha256sums.txt"
-
-    # Download binary
-    local tmp_dir
-    tmp_dir=$(mktemp -d)
-    trap 'rm -rf "$tmp_dir"' EXIT
-
-    info "Downloading ${binary_name}..."
-    download "$download_url" "${tmp_dir}/cpac"
-
-    # Download and verify checksum
-    info "Verifying checksum..."
-    download "$checksum_url" "${tmp_dir}/sha256sums.txt"
-
-    local expected_hash
-    expected_hash=$(grep "${binary_name}" "${tmp_dir}/sha256sums.txt" | awk '{print $1}')
-
-    if [ -z "$expected_hash" ]; then
-        warn "Could not find checksum for ${binary_name}, skipping verification"
-    else
-        local actual_hash
-        actual_hash=$(sha256sum "${tmp_dir}/cpac" | awk '{print $1}')
-
-        if [ "$expected_hash" != "$actual_hash" ]; then
-            error "Checksum mismatch!"
-            error "  Expected: ${expected_hash}"
-            error "  Got:      ${actual_hash}"
-            exit 1
-        fi
-        info "Checksum verified"
+    # Ensure we have Rust
+    if ! command -v rustc &>/dev/null || ! command -v cargo &>/dev/null; then
+        install_rust
     fi
 
-    # Install
-    chmod +x "${tmp_dir}/cpac"
+    # Create temp build directory
+    BUILD_DIR=$(mktemp -d)
+    cd "$BUILD_DIR"
+
+    step "Cloning cpac"
+    git clone --depth 1 --branch "$BRANCH" "$REPO" cpac
+    cd cpac
+
+    step "Building release binary"
+    info "This may take a few minutes on first build..."
+    cargo build --release 2>&1 | tail -3
+
+    step "Installing cpac"
+    local binary="target/release/cpac"
+
+    if [ ! -f "$binary" ]; then
+        error "Build failed — binary not found at $binary"
+        exit 1
+    fi
 
     if [ -w "$INSTALL_DIR" ]; then
-        cp "${tmp_dir}/cpac" "${INSTALL_DIR}/cpac"
+        cp "$binary" "${INSTALL_DIR}/cpac"
     else
-        info "Installing to ${INSTALL_DIR} (requires sudo)..."
-        sudo cp "${tmp_dir}/cpac" "${INSTALL_DIR}/cpac"
+        sudo cp "$binary" "${INSTALL_DIR}/cpac"
     fi
 
-    info "Installed cpac ${version} to ${INSTALL_DIR}/cpac"
+    chmod +x "${INSTALL_DIR}/cpac"
+
+    # Verify
+    if command -v cpac &>/dev/null; then
+        local version
+        version=$(cpac --version 2>/dev/null | head -1 | awk '{print $2}' || echo "unknown")
+        info "Installed cpac ${version} to ${INSTALL_DIR}/cpac"
+    else
+        info "Installed cpac to ${INSTALL_DIR}/cpac"
+        warn "If 'cpac' is not found, add ${INSTALL_DIR} to your PATH:"
+        warn "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+    fi
+
     echo ""
     info "Run 'cpac --help' to get started"
     echo ""

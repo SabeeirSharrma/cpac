@@ -4,42 +4,15 @@ Community Package Analysis Client: a package trust layer for Arch-based Linux di
 
 CPAC is an advisor, not a package manager replacement. It helps answer whether a package looks trustworthy before you install it.
 
-## Build
+## Install
 
 ```bash
-cargo build
+curl -sSf https://thecinderproject.qd.je/cpac/install.sh | bash
 ```
 
-## Install Locally
+This builds cpac from source and installs it to `/usr/local/bin`. If Rust isn't already installed, it's added temporarily and removed after — no leftover dependencies.
 
-From the repository root:
-
-```bash
-cargo install --path .
-```
-
-This installs the CLI binary as `cpac` in Cargo's bin directory, usually
-`~/.cargo/bin`.
-
-After installation, run:
-
-```bash
-cpac --help
-```
-
-If your shell prints `cpac: command not found`, Cargo's bin directory is not on
-your `PATH`. Add it for the current terminal session:
-
-```bash
-export PATH="$HOME/.cargo/bin:$PATH"
-```
-
-To make that permanent, add the same line to your shell config, such as
-`~/.bashrc` or `~/.zshrc`, then restart your terminal or reload the config:
-
-```bash
-source ~/.bashrc
-```
+See [docs/installation.md](docs/installation.md) for other install methods (AUR, manual build).
 
 ## Usage
 
@@ -86,7 +59,7 @@ CPAC automatically clears its metadata cache on a configurable interval (daily/w
 
 - Arch-based Linux distribution
 - `pacman` available on `PATH`
-- Network access for AUR search and AUR trust metadata
+- Network access for AUR search and trust DB sync
 
 ## Trust Scoring
 
