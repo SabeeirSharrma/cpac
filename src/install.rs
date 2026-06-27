@@ -53,21 +53,27 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
     if !force {
         let mut report = trust::analyze(cache, &pkg);
 
-        // Fast consensus check against community snapshots
+        // Full pre-flight check against trust DB
         if let Ok(Some(pkgbuild)) = fetch_pkgbuild_for_install(&pkg) {
-            let comparison = compare::compare_pkgbuild(&pkgbuild, &pkg.name, &pkg.version);
-            let adj = compare::consensus_adjustment(comparison.verdict);
-            if adj != 0 {
+            let preflight = compare::preflight_check(&pkg.name, &pkg.version, &pkgbuild);
+
+            // Show pre-flight report
+            println!("{}", compare::format_report(&preflight));
+
+            // Apply score adjustment from pre-flight
+            if preflight.score_adjustment != 0 {
                 report.signals.push(trust::TrustSignal {
-                    name: "Community Consensus".to_string(),
-                    points: adj,
+                    name: "Trust DB".to_string(),
+                    points: preflight.score_adjustment,
                     max_points: 0,
-                    detail: comparison.explanation,
+                    detail: preflight.explanation,
                 });
                 let total: i32 = report.signals.iter().map(|s| s.points).sum();
                 report.score = total.clamp(0, 100) as u32;
                 report.recommendation = trust::recommendation(report.score).to_string();
             }
+
+            // TODO: If preflight.should_submit, queue for batch submission on cpac update
         }
 
         // For upgrades, check for PKGBUILD diff
