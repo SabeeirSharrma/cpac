@@ -1,3 +1,142 @@
+# CPAC v0.7.0 — Trust DB Integration & PKGBUILD Sanitization
+
+## Overview
+
+Version 0.7.0 integrates the cpac-trust-db directly into CPAC. CPAC now talks to Supabase for real-time advisory warnings, performs two-pass PKGBUILD sanitization before submission, detects anomalies, submits snapshots with consent-aware privacy controls, and ships a transparent build-from-source installer. The release workflow builds x86_64 and aarch64 binaries with rustls-tls (no OpenSSL dependency).
+
+---
+
+## Changes
+
+### Trust DB Direct Integration
+
+CPAC communicates directly with the Supabase trust DB backend via REST API. No proxy or custom domain needed. The `trust_db` module handles:
+- Meta check (staleness detection) on every `cpac install` and `cpac update`
+- Auto-sync when data is stale (>24 hours)
+- Delta sync for lightweight incremental updates (`updated_at > last_sync`)
+- Local cache at `~/.cpac/trust-db/` for offline use
+
+**Files**: `src/trust_db.rs`
+
+### Advisory Warnings
+
+When installing or updating packages, CPAC checks the advisory database and displays color-coded warnings:
+- **Critical** (red): Known malicious — DANGER verdict, blocks install
+- **High** (red): Confirmed compromise — WARNING verdict, blocks install
+- **Medium** (yellow): Suspicious activity — CAUTION
+- **Low** (blue): Minor concerns — informational
+- **Suspected** (yellow): Under investigation — WARNING
+
+Advisory signal contributes -30 to -5 penalty to trust score.
+
+**Files**: `src/trust/mod.rs`, `src/install.rs`, `src/update.rs`
+
+### PKGBUILD Sanitization (Pass 1 + Pass 2)
+
+Before any snapshot submission, CPAC runs two sanitization passes:
+
+**Pass 1 — Structural Redaction**:
+- URLs → `[URL:REDACTED]`
+- Maintainer info → `[MAINTAINER:REDACTED]`
+- Comments → removed
+- Local file references → `[LOCAL_FILE:REDACTED]`
+
+**Pass 2 — Anomaly Detection** (8 categories):
+- Remote script execution (`curl | bash`, `wget | sh`, `fetch | sh`)
+- Obfuscated content (hex escapes, base64, unicode tricks, concatenation)
+- `eval` and `exec` usage
+- Aggressive file removal (`rm -rf /`, `rm -rf ~`)
+- Dynamic `pkgver` (non-deterministic builds)
+- Package manager install inside build (`pacman -S`, `apt install`)
+- System path modifications (`export PATH=`, modifying `/etc/`)
+- Suspicious npm/bun install patterns
+
+**Files**: `src/sanitize.rs`
+
+### SHA-256 Hashing
+
+Computes SHA-256 hashes of sanitized PKGBUILDs for fast consensus checking without transmitting full content.
+
+**Files**: `src/sanitize.rs`
+
+### Pre-flight Intelligence Check
+
+`compare::preflight_check()` is a single call returning everything needed before install:
+- Verdict: Clean, AdvisoryHit, Divergent, Outdated, Unknown
+- Advisory status with severity and message
+- Hash match/divergence status
+- Outdatedness check against local cache
+- Anomaly detection results (if full consent)
+
+**Files**: `src/compare.rs`
+
+### Snapshot Submission Pipeline
+
+- Queue locally in `~/.cpac/trust-db/pending_snapshots.json`
+- Flush queue on `cpac update` (never blocks install)
+- Consent-aware: Hash-only (consent=hash) or full sanitized PKGBUILD (consent=full)
+- `should_submit` flag prevents redundant submissions
+
+**Files**: `src/trust_db.rs`, `src/install.rs`, `src/update.rs`
+
+### Anonymous Client Tokens
+
+UUID-based anonymous token stored in `~/.cpac/trust-db/token`. Used for rate limiting only.
+
+**Files**: `src/trust_db.rs`
+
+### Transparent Install Script
+
+`install.sh` builds from source via `cargo install`:
+- Auto-detects Rust, installs temp toolchain if needed
+- Builds and installs to `/usr/local/bin`
+- Cleans up temp toolchain on exit (trap-based)
+
+```bash
+curl -sSf https://thecinderproject.qd.je/cpac/install.sh | bash
+```
+
+**Files**: `install.sh`
+
+### GitHub Actions Release Workflow
+
+Automated binary builds on tag push:
+- x86_64-unknown-linux-gnu and aarch64-unknown-linux-gnu
+- SHA-256 checksums, GitHub Release with assets
+- Uses rustls-tls (no OpenSSL dependency)
+
+**Files**: `.github/workflows/release.yml`
+
+### Bug Fixes
+
+#### aarch64 Cross-Compilation
+
+Switched reqwest from native-tls to rustls-tls, eliminating the OpenSSL cross-compilation dependency.
+
+**Files**: `Cargo.toml`, `Cargo.lock`
+
+---
+
+## Files Changed (v0.7.0)
+
+- `Cargo.toml` — version bump to 0.7.0, reqwest rustls-tls, new deps (regex, hostname, sha2, uuid)
+- `Cargo.lock` — updated dependency tree
+- `src/trust_db.rs` — Supabase REST client, meta check, delta sync, snapshot submission, pending queue, anonymous tokens
+- `src/compare.rs` — pre-flight intelligence check with verdicts
+- `src/sanitize.rs` — Pass 1 structural redaction + Pass 2 anomaly detection (8 categories, 6 tests)
+- `src/trust/mod.rs` — advisory signal in trust scoring
+- `src/install.rs` — auto-sync, consent-aware queuing, preflight + anomaly display
+- `src/update.rs` — delta sync, flush queue, advisory warnings
+- `src/config/mod.rs` — ConsentLevel enum
+- `install.sh` — transparent build-from-source installer
+- `.github/workflows/release.yml` — release workflow (x86_64 + aarch64)
+- `docs/installation.md` — updated install docs
+- `docs/configuration.md` — updated config docs
+- `docs/trust-algorithm.md` — updated trust algorithm docs
+- `docs/reference.md` — updated reference docs
+
+---
+
 # CPAC v0.6.0 — Stability, Config & Auto-Cache
 
 ## Overview
@@ -103,17 +242,6 @@ AUR support disabled.
 
 $ cpac config reset
 Configuration reset to defaults.
-```
-
-### Search with AUR failure
-
-```bash
-# If AUR is down, search still returns official results:
-$ cpac search firefox
-Warning: AUR search failed (...). Showing official results only.
-Package                          Version        Source           Description
-firefox                          152.0.2-1      official/extra   Fast, Private & Safe Web Browser
-...
 ```
 
 ### All Checks Pass

@@ -51,6 +51,15 @@ cpac clear-cache                 # manually clear cache
 
 On first launch, CPAC asks about crowdsourced data sharing (opt-in, anonymous). This can be changed anytime via `cpac config set consent`.
 
+## Trust DB Integration
+
+CPAC connects directly to the cpac-trust-db backend for real-time trust data:
+- **Advisory warnings** — color-coded alerts when installing known-malicious packages
+- **Snapshot submissions** — anonymized PKGBUILD data shared with the community (consent-aware)
+- **Auto-sync** — trust data refreshes automatically when stale
+
+Data is stored locally at `~/.cpac/trust-db/` for offline use.
+
 ## Auto Cache Clearing
 
 CPAC automatically clears its metadata cache on a configurable interval (daily/weekly/monthly, default monthly). Set it with `cpac config set cache`.
@@ -63,7 +72,7 @@ CPAC automatically clears its metadata cache on a configurable interval (daily/w
 
 ## Trust Scoring
 
-The trust algorithm uses metadata available from official repositories and the AUR:
+The trust algorithm uses metadata available from official repositories and the AUR, plus real-time trust DB data:
 
 - repository source
 - package age
@@ -72,6 +81,9 @@ The trust algorithm uses metadata available from official repositories and the A
 - update recency
 - out-of-date and orphan status
 - PKGBUILD diff results
+- **advisory warnings** (known malicious/compromised packages)
+- **snapshot divergence** (hash comparison with crowdsourced data)
+- **anomaly detection** (suspicious PKGBUILD patterns)
 
 See [docs/trust-algorithm.md](docs/trust-algorithm.md) for details.
 
