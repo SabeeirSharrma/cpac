@@ -35,9 +35,15 @@ pub fn run(cache: &Cache, force_aur: bool) -> Result<()> {
 
     println!("Cleared cached package metadata.");
 
-    // Sync trust database
+    // Sync trust database (prefer delta, fall back to full)
     println!("Syncing trust database...");
-    match trust_db::sync() {
+    let sync_result = if trust_db::load_local_meta().is_some() {
+        trust_db::sync_delta()
+    } else {
+        trust_db::sync()
+    };
+
+    match sync_result {
         Ok(result) => println!("{}", result),
         Err(e) => {
             eprintln!("Warning: Trust database sync failed: {}", e);

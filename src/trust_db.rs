@@ -213,6 +213,128 @@ pub fn sync() -> Result<SyncResult> {
     })
 }
 
+/// Fetch advisories updated since a given timestamp (for delta sync).
+fn fetch_advisories_since(since: &str) -> Result<Vec<Advisory>> {
+    let url = format!(
+        "{}/rest/v1/advisories?select=*&updated_at=gt.{}",
+        SUPABASE_URL, since
+    );
+    let client = supabase_client(Duration::from_secs(15))?;
+
+    let response = client
+        .get(&url)
+        .header("apikey", SUPABASE_ANON_KEY)
+        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .send()
+        .context("Failed to connect to trust-db server for delta")?
+        .error_for_status()
+        .context("Trust-db server returned an error")?;
+
+    let advisories: Vec<Advisory> = response.json().context("Failed to parse advisories")?;
+    Ok(advisories)
+}
+
+/// Fetch snapshots updated since a given timestamp (for delta sync).
+fn fetch_snapshots_since(since: &str) -> Result<Vec<SnapshotEntry>> {
+    let url = format!(
+        "{}/rest/v1/snapshots?select=*&last_seen=gt.{}",
+        SUPABASE_URL, since
+    );
+    let client = supabase_client(Duration::from_secs(15))?;
+
+    let response = client
+        .get(&url)
+        .header("apikey", SUPABASE_ANON_KEY)
+        .header("Authorization", format!("Bearer {}", SUPABASE_ANON_KEY))
+        .send()
+        .context("Failed to connect to trust-db server for delta")?
+        .error_for_status()
+        .context("Trust-db server returned an error")?;
+
+    let snapshots: Vec<SnapshotEntry> = response.json().context("Failed to parse snapshots")?;
+    Ok(snapshots)
+}
+
+/// Perform a delta sync (only fetch changed records since last sync).
+pub fn sync_delta() -> Result<SyncResult> {
+    let local = load_local_meta();
+    let since = match local {
+        Some(ref meta) => &meta.last_sync,
+        None => return sync(), // No local cache — full sync needed
+    };
+
+    let new_advisories = fetch_advisories_since(since).unwrap_or_default();
+    let new_snapshots = fetch_snapshots_since(since).unwrap_or_default();
+
+    if new_advisories.is_empty() && new_snapshots.is_empty() {
+        return Ok(SyncResult::Skipped);
+    }
+
+    // Merge into local cache
+    let dir = trust_db_dir()?;
+    fs::create_dir_all(&dir)?;
+
+    // Load existing data
+    let existing_advisories: Vec<Advisory> = {
+        let path = advisories_path()?;
+        if path.exists() {
+            let data = fs::read(&path)?;
+            serde_json::from_slice(&data)?
+        } else {
+            vec![]
+        }
+    };
+
+    let existing_snapshots: Vec<SnapshotEntry> = {
+        let path = snapshots_path()?;
+        if path.exists() {
+            let data = fs::read(&path)?;
+            serde_json::from_slice(&data)?
+        } else {
+            vec![]
+        }
+    };
+
+    // Merge advisories (replace existing by package name)
+    let mut merged_advisories = existing_advisories;
+    for new_adv in &new_advisories {
+        merged_advisories.retain(|a| a.package != new_adv.package);
+        merged_advisories.push(new_adv.clone());
+    }
+
+    // Merge snapshots (replace existing by package+version+sha256)
+    let mut merged_snapshots = existing_snapshots;
+    for new_snap in &new_snapshots {
+        merged_snapshots.retain(|s| {
+            !(s.package == new_snap.package
+                && s.version == new_snap.version
+                && s.sha256 == new_snap.sha256)
+        });
+        merged_snapshots.push(new_snap.clone());
+    }
+
+    // Save merged data
+    let advisories_data = serde_json::to_string(&merged_advisories)?;
+    fs::write(advisories_path()?, advisories_data)?;
+
+    let snapshots_data = serde_json::to_string(&merged_snapshots)?;
+    fs::write(snapshots_path()?, snapshots_data)?;
+
+    // Update meta
+    let version = compute_version(&merged_advisories, &merged_snapshots);
+    save_local_meta(&LocalMeta {
+        version,
+        last_sync: chrono::Utc::now().to_rfc3339(),
+        advisory_count: merged_advisories.len(),
+        snapshot_count: merged_snapshots.len(),
+    })?;
+
+    Ok(SyncResult::Synced {
+        advisories: new_advisories.len(),
+        snapshots: new_snapshots.len(),
+    })
+}
+
 /// Look up an advisory for a specific package from local cache.
 pub fn lookup_advisory(package: &str) -> Result<Option<Advisory>> {
     let path = advisories_path()?;
