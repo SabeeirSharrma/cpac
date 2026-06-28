@@ -201,9 +201,13 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
 
     // Queue snapshot for batch submission on next cpac update
     if let Some((pkg, ver, hash, pkgbuild_text)) = pending_snapshot {
+        let has_pkgbuild = pkgbuild_text.is_some();
+        if has_pkgbuild {
+            println!("  Sanitizing PKGBUILD and queuing snapshot...");
+        }
         match trust_db::queue_snapshot(&pkg, &ver, &hash, pkgbuild_text) {
-            Ok(()) => println!("Snapshot queued for submission on next 'cpac update'."),
-            Err(e) => eprintln!("Note: Snapshot queuing failed (non-critical): {}", e),
+            Ok(()) => println!("  Snapshot queued for submission on next 'cpac update'."),
+            Err(e) => eprintln!("  Note: Snapshot queuing failed (non-critical): {}", e),
         }
     }
 

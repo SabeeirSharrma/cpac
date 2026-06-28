@@ -195,14 +195,39 @@ pub fn is_installed(package: &str) -> Result<bool> {
 }
 
 /// Fetch PKGBUILD for a package based on its source.
-/// Currently only supports AUR packages; returns None for official/third-party.
+/// AUR: fetches from AUR cgit. Official: fetches from Arch GitLab.
 pub fn fetch_pkgbuild_for_package(pkg: &PackageInfo) -> Result<Option<String>> {
     match &pkg.source {
         PackageSource::Aur => crate::backends::aur::fetch_pkgbuild(&pkg.name),
-        PackageSource::Official { .. } | PackageSource::ThirdParty => {
-            // For official packages, we could fetch from ABS but it's not available by default
-            Ok(None)
-        }
+        PackageSource::Official { .. } => fetch_official_pkgbuild(&pkg.name),
+        PackageSource::ThirdParty => Ok(None),
         PackageSource::Unknown => Ok(None),
+    }
+}
+
+/// Fetch PKGBUILD for an official package from Arch GitLab.
+fn fetch_official_pkgbuild(name: &str) -> Result<Option<String>> {
+    let url = format!(
+        "https://gitlab.archlinux.org/archlinux/packaging/packages/{}/-/raw/main/PKGBUILD",
+        name
+    );
+
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("cpac/0.9.2")
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
+
+    let response = client.get(&url).send();
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let text = resp.text().unwrap_or_default();
+            if text.trim().is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(text))
+            }
+        }
+        _ => Ok(None),
     }
 }

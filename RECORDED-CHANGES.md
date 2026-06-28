@@ -1,8 +1,8 @@
-# CPAC v0.9.2 — Patch: Self-Updater Installs Temporary Rust
+# CPAC v0.9.2 — Patch: Self-Updater + Official PKGBUILD Fetching
 
 ## Overview
 
-Patch release adding automatic temporary Rust toolchain installation to the self-updater. Users without Rust installed can now run `cpac upgrade` without manual setup.
+Patch release adding automatic temporary Rust toolchain installation to the self-updater, and fetching PKGBUILDs for official Arch packages from Arch GitLab for trust DB submission.
 
 ---
 
@@ -17,11 +17,21 @@ Patch release adding automatic temporary Rust toolchain installation to the self
 - **Cleanup**: removes temporary Rust toolchain after build (via Drop guard)
 - **Error-safe**: cleanup happens on success, failure, or cancellation
 
-Previously, users without Rust saw: `cargo is required for upgrades. Please install Rust and try again.`
+### Official Package PKGBUILD Fetching
 
-Now it just works.
+`fetch_pkgbuild_for_package()` now fetches PKGBUILDs for official Arch packages from `gitlab.archlinux.org`:
 
-**Files**: `src/upgrade.rs`
+- **URL pattern**: `https://gitlab.archlinux.org/archlinux/packaging/packages/<pkg>/-/raw/main/PKGBUILD`
+- **10-second timeout** per request
+- **Graceful fallback**: returns `None` if fetch fails (no error shown)
+- **Enables trust DB submission** for official packages (previously skipped)
+
+### Progress Messages
+
+- `Sanitizing PKGBUILD and queuing snapshot...` shown when PKGBUILD is being prepared
+- `Snapshot queued for submission on next 'cpac update'.` shown after queueing
+
+**Files**: `src/upgrade.rs`, `src/resolver/mod.rs`, `src/install.rs`
 
 ---
 

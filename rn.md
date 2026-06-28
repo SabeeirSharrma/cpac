@@ -2,12 +2,13 @@
 
 ## Overview
 
-Patch release making `cpac upgrade` work for users without Rust installed.
+Patch release making `cpac upgrade` work without Rust, and enabling official package PKGBUILD submission to the trust DB.
 
 ## Changes
 
-- **Self-updater installs temporary Rust** — if `cargo` is not found, `cpac upgrade` installs a temporary toolchain via `pacman` or `rustup.rs`, builds, then removes it
-- **Drop guard cleanup** — temporary Rust and build directory are cleaned up automatically on success or failure
+- **Self-updater installs temporary Rust** — if `cargo` is not found, `cpac upgrade` installs a temporary toolchain, builds, then removes it
+- **Official package PKGBUILDs** — fetches from Arch GitLab (`gitlab.archlinux.org`), enables trust DB submission for official packages
+- **Progress messages** — shows "Sanitizing PKGBUILD and queuing snapshot..." during install
 
 ---
 
