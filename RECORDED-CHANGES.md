@@ -1,24 +1,45 @@
-# CPAC v0.8.0 — Self-Update System, Panel Redesign, NVIDIA NIM AI, Cron Reports
+# CPAC v0.8.1 — Source-Based Self-Update System
 
 ## Overview
 
-Version 0.8.0 adds a self-update system with GitHub release integration, completes the CPAC Trust DB panel system with a unified Review workflow, connects AI analysis to NVIDIA NIM reasoning models, adds automated weekly email reports via Resend, and configures a daily cron trigger for report generation.
+Version 0.8.1 adds a self-update system that builds from source. When a newer version is available on GitHub, CPAC clones the repo at the target tag, builds a release binary, and replaces the running binary — preserving all user config in `~/.cpac/`.
 
 ---
 
 ## Changes
 
-### Self-Update System
+### Source-Based Self-Update
 
-New `cpac upgrade` command checks GitHub releases for newer versions and replaces the binary:
+New `cpac upgrade` command builds CPAC from source and replaces the binary:
 
-- **Version check on every run** — non-blocking, cached 24 hours to avoid hitting GitHub API on every invocation
-- **`cpac upgrade`** — downloads the correct binary (x86_64 or aarch64) from GitHub releases, verifies SHA-256 checksum, replaces the running binary
+- **Version check on every run** — non-blocking, cached 24 hours in `~/.cpac/config.toml`
+- **`cpac upgrade`** — clones repo at latest tag, `cargo build --release`, replaces binary
 - **`--no-check-updates`** — global flag to skip version check on any command
-- **Colored notice** — after every command, if a newer version exists, shows `"A new version of CPAC is available: X.Y.Z (current: A.B.C) — Run cpac upgrade to upgrade."`
-- **Binary replacement** — renames current binary to `.old`, renames new to current, deletes `.old` (safe on Linux)
-- **Checksum verification** — downloads `sha256sums.txt` from release, verifies before replacing
-- **Config fields** — `last_update_check` (epoch seconds), `cached_latest_version` (version string) in `~/.cpac/config.toml`
+- **Config preserved** — user config in `~/.cpac/` is never touched during upgrade
+- **Sudo handling** — detects if install dir is writable, uses `sudo` for `/usr/local/bin`
+- **Safe replacement** — renames current binary to `.old`, copies new, deletes `.old`
+- **Prerequisite checks** — verifies `git` and `cargo` are available before attempting upgrade
+- **Build cleanup** — temp build directory removed after install (success or failure)
+- **Colored notice** — after every command, if newer version exists, shows upgrade notice
+
+### Flow
+
+1. Fetch latest release tag from GitHub API (`/repos/SabeeirSharrma/cpac/releases`)
+2. Compare semver versions (strip `v` prefix, compare major.minor.patch)
+3. If newer: `git clone --depth 1 --branch <tag>` into temp dir
+4. `cargo build --release`
+5. Replace current binary (with `sudo` if needed)
+6. Clean up temp dir
+7. Verify new version with `cpac --version`
+
+### Config Safety
+
+User configuration is stored in `~/.cpac/` and is completely separate from the binary:
+- `~/.cpac/config.toml` — settings (aur, consent, cache interval, update check cache)
+- `~/.cpac/trust-db/` — trust database cache
+- `~/.cpac/cache/` — search/info cache
+
+None of these are modified during an upgrade.
 
 **Files**: `src/upgrade.rs` (new), `src/cli/mod.rs`, `src/config/mod.rs`, `src/main.rs`
 

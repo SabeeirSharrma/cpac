@@ -1,20 +1,21 @@
 COMBINED WITH PATCHES FOR v0.7.0 (v0.7.1 and v0.7.2)
-# CPAC v0.8.0 Release Notes
+# CPAC v0.8.1 Release Notes
 
 ## Overview
 
-v0.8.0 adds a self-update system, completes the Trust DB panel system with a unified Review workflow, connects AI analysis to NVIDIA NIM reasoning models, adds automated weekly email reports, and configures a daily cron trigger. This is the first release with a fully operational advisory pipeline and self-upgrade capability.
+v0.8.1 adds a source-based self-update system. CPAC always builds from source — the updater clones the repo at the latest tag, runs `cargo build --release`, and replaces the binary while preserving all user config.
 
 ## Changes
 
-### Self-Update System
+### Source-Based Self-Update
 
-- **`cpac upgrade`** — downloads the latest release from GitHub, verifies checksum, replaces the binary
-- **Version check on every run** — cached 24 hours, shows notice if newer version available
+- **`cpac upgrade`** — clones repo at latest tag, builds from source, replaces binary
+- **Version check on every run** — cached 24h, shows notice if newer version available
 - **`--no-check-updates`** — skip version check on any command
-- **Platform detection** — auto-selects x86_64 or aarch64 binary
-- **SHA-256 verification** — downloads checksums from release, verifies before replacing
-- **Safe replacement** — renames current binary, installs new one, cleans up
+- **Config preserved** — `~/.cpac/` (config, trust-db, cache) is never modified during upgrade
+- **Sudo handling** — auto-detects if `/usr/local/bin` needs elevated permissions
+- **Prerequisite checks** — verifies `git` and `cargo` are installed before upgrading
+- **Safe replacement** — renames current binary, copies new one, cleans up
 
 ### Panel Redesign — Unified Review Workflow
 
