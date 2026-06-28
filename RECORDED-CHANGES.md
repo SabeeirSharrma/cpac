@@ -1,8 +1,49 @@
-# CPAC v0.8.1 — Source-Based Self-Update System
+# CPAC v0.8.2 — Bidirectional Advisory Statuses
 
 ## Overview
 
-Version 0.8.1 adds a self-update system that builds from source. When a newer version is available on GitHub, CPAC clones the repo at the target tag, builds a release binary, and replaces the running binary — preserving all user config in `~/.cpac/`.
+Version 0.8.2 aligns the CPAC client with the new bidirectional advisory status system. Advisories are now trust attestations in both directions — `safe` adds a positive signal (+10), while `suspicious`/`warning`/`malicious` add penalties. The `confirmed_malicious` alias is dropped in favor of just `malicious`.
+
+---
+
+## Changes
+
+### Bidirectional Advisory Statuses
+
+Advisory statuses are now trust attestations, not just threat flags:
+
+| Status | Trust Impact | Description |
+|--------|-------------|-------------|
+| `safe` | **+10** | Positive attestation, package verified clean |
+| `suspicious` | **-15** | Under investigation, proceed with caution |
+| `warning` | **-20** | Credible concern, not yet confirmed |
+| `malicious` | **-30** | Confirmed malicious |
+| `resolved` | **0** | Was malicious/suspicious, now clean (neutral) |
+
+**Migration from old statuses:**
+- `confirmed` → `warning`
+- `suspected` → `suspicious`
+- `resolved` → `resolved` (unchanged)
+
+**`confirmed_malicious`** is not a separate status — `malicious` is sufficient since publication implies maintainer review.
+
+### Trust Score Impact
+
+The `advisory_penalty()` function now uses **status-first scoring** (not severity-first):
+
+```rust
+// Old: severity-based (-30 to -5), status was fallback
+// New: status-based (+10 to -30), bidirectional
+match advisory.status.as_str() {
+    "safe" => 10,        // positive signal
+    "suspicious" => -15,
+    "warning" => -20,
+    "malicious" => -30,
+    "resolved" => 0,
+}
+```
+
+**Files**: `src/trust_db.rs`
 
 ---
 

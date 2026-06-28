@@ -1,4 +1,30 @@
 COMBINED WITH PATCHES FOR v0.7.0 (v0.7.1 and v0.7.2)
+# CPAC v0.8.2 Release Notes
+
+## Overview
+
+v0.8.2 aligns the advisory status system with bidirectional trust attestations. Advisories can now be positive (`safe` = +10) or negative (`suspicious`/`warning`/`malicious`), making the trust score more accurate.
+
+## Changes
+
+### Bidirectional Advisory Statuses
+
+- **`safe`** — positive attestation, package verified clean (+10 trust signal)
+- **`suspicious`** — under investigation, proceed with caution (-15)
+- **`warning`** — credible concern, not yet confirmed (-20)
+- **`malicious`** — confirmed malicious (-30)
+- **`resolved`** — was malicious/suspicious, now clean (0, neutral)
+- Old `confirmed` → `warning`, old `suspected` → `suspicious`
+- `confirmed_malicious` dropped — `malicious` is sufficient (publication implies review)
+
+### Trust Score — Status-First Scoring
+
+- Advisory penalty now determined by **status** (not severity)
+- `safe` advisories add a positive signal, not just absence of penalty
+- Severity still displayed in reports but status drives the score
+
+---
+
 # CPAC v0.8.1 Release Notes
 
 ## Overview

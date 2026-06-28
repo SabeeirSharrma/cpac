@@ -431,40 +431,41 @@ pub fn submit_snapshot(package: &str, version: &str, sha256: &str, pkgbuild_text
     }
 }
 
-/// Get the trust penalty for an advisory based on severity.
+/// Get the trust score impact for an advisory based on status.
+///
+/// Statuses are bidirectional trust attestations:
+///   safe        → +10 (positive attestation, package verified clean)
+///   suspicious  → -15 (under investigation, proceed with caution)
+///   warning     → -20 (credible concern, not yet confirmed)
+///   malicious   → -30 (confirmed malicious)
+///   resolved    →   0 (was malicious/suspicious, now clean — neutral)
 pub fn advisory_penalty(advisory: &Advisory) -> i32 {
-    match advisory.severity.as_str() {
-        "critical" => -30,
-        "high" => -20,
-        "medium" => -10,
-        "low" => -5,
-        _ => {
-            if advisory.status == "suspected" {
-                -15
-            } else if advisory.status == "resolved" {
-                0
-            } else {
-                0
-            }
-        }
+    match advisory.status.as_str() {
+        "safe" => 10,
+        "suspicious" => -15,
+        "warning" => -20,
+        "malicious" => -30,
+        "resolved" => 0,
+        // Backwards compat for old status values in local cache
+        "confirmed" => -20, // old "confirmed" maps to "warning"
+        "suspected" => -15, // old "suspected" maps to "suspicious"
+        _ => 0,
     }
 }
 
-/// Get the recommendation floor for an advisory based on severity.
+/// Get the recommendation floor for an advisory based on status.
 #[allow(dead_code)]
 pub fn advisory_floor(advisory: &Advisory) -> &'static str {
-    match advisory.severity.as_str() {
-        "critical" => "Danger",
-        "high" => "Warning",
-        "medium" => "Caution",
-        "low" => "",
-        _ => {
-            if advisory.status == "suspected" {
-                "Warning"
-            } else {
-                ""
-            }
-        }
+    match advisory.status.as_str() {
+        "malicious" => "Danger",
+        "warning" => "Warning",
+        "suspicious" => "Caution",
+        "safe" => "",
+        "resolved" => "",
+        // Backwards compat
+        "confirmed" => "Warning",
+        "suspected" => "Caution",
+        _ => "",
     }
 }
 
