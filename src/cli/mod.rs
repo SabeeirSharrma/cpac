@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
+use colored::Colorize;
 use std::io::{self, IsTerminal, Write};
 
 use crate::{
@@ -233,6 +234,38 @@ fn first_run_prompt() -> Result<()> {
     Ok(())
 }
 
+/// Check and handle legacy/removed commands with helpful migration messages.
+fn check_legacy_commands() -> Option<String> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 3 {
+        return None;
+    }
+
+    let subcmd = args[1].as_str();
+    let arg = args[2].as_str();
+
+    match (subcmd, arg) {
+        ("aur", "enable") => Some(format!(
+            "The 'aur' subcommand has been moved.\n  Use: {} instead.",
+            "cpac config set aur on".cyan()
+        )),
+        ("aur", "disable") => Some(format!(
+            "The 'aur' subcommand has been moved.\n  Use: {} instead.",
+            "cpac config set aur off".cyan()
+        )),
+        ("aur", _) => Some(format!(
+            "The 'aur' subcommand has been removed.\n  Use 'cpac config set aur on|off' to configure AUR.\n  Run {} for all commands.",
+            "cpac --help".cyan()
+        )),
+        ("update", "--self") | ("self-update", _) | ("upgrade", _) if subcmd != "upgrade" => Some(format!(
+            "The '{}' command has been renamed.\n  Use: {} instead.",
+            subcmd,
+            "cpac upgrade".cyan()
+        )),
+        _ => None,
+    }
+}
+
 /// Check and perform automatic cache clearing based on configured interval.
 fn auto_cache_clear() -> Result<()> {
     let _ = config::maybe_clear_cache()?;
@@ -240,6 +273,11 @@ fn auto_cache_clear() -> Result<()> {
 }
 
 pub fn run() -> Result<()> {
+    // Intercept legacy commands before clap parsing
+    if let Some(msg) = check_legacy_commands() {
+        bail!("{}", msg);
+    }
+
     // Handle color control: --no-color flag or NO_COLOR env var
     // (colored v2 does not auto-respect NO_COLOR)
     let cli = Cli::parse();
