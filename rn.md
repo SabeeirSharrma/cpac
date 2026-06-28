@@ -1,15 +1,19 @@
-# CPAC v0.9.1 Release Notes
+# CPAC v0.9.2 Release Notes
 
 ## Overview
 
-Patch release fixing the trust-db connection after the Cloudflare proxy SSL certificate failed to provision.
+Patch release making `cpac upgrade` work for users without Rust installed.
 
 ## Changes
 
-- **Direct worker URL** — bypasses broken `api.thecinderproject.qd.je` proxy, connects to `cpac-trust-db-api.sabplay-idk.workers.dev` directly
-- **AI report prompt** — updated branding to "The Cinder Project, under the CPAC Trust DB division"
+- **Self-updater installs temporary Rust** — if `cargo` is not found, `cpac upgrade` installs a temporary toolchain via `pacman` or `rustup.rs`, builds, then removes it
+- **Drop guard cleanup** — temporary Rust and build directory are cleaned up automatically on success or failure
 
 ---
+
+# CPAC v0.9.1 Release Notes
+
+_(see previous entry)_
 
 # CPAC v0.9.0 Release Notes
 

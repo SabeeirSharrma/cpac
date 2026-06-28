@@ -8,6 +8,23 @@ use std::process::Command;
 
 use crate::config;
 
+/// Guard that cleans up build directory and temporary Rust toolchain on drop.
+struct UpgradeCleanup {
+    build_dir: Option<std::path::PathBuf>,
+    temp_rust: bool,
+}
+
+impl Drop for UpgradeCleanup {
+    fn drop(&mut self) {
+        if let Some(ref dir) = self.build_dir {
+            let _ = fs::remove_dir_all(dir);
+        }
+        if self.temp_rust {
+            cleanup_temporary_rust();
+        }
+    }
+}
+
 const GITHUB_REPO: &str = "SabeeirSharrma/cpac";
 const GITHUB_API: &str = "https://api.github.com";
 
@@ -162,8 +179,13 @@ pub fn run_upgrade() -> Result<()> {
     if !command_exists("git") {
         bail!("git is required for upgrades. Please install git and try again.");
     }
-    if !command_exists("cargo") {
-        bail!("cargo is required for upgrades. Please install Rust (https://rustup.rs) and try again.");
+
+    // Install temporary Rust toolchain if cargo is missing
+    let rust_was_present = command_exists("cargo");
+    if !rust_was_present {
+        println!();
+        println!("{}", "── Installing temporary Rust toolchain ──".cyan());
+        install_temporary_rust()?;
     }
 
     // Create temp build directory
@@ -172,6 +194,12 @@ pub fn run_upgrade() -> Result<()> {
         fs::remove_dir_all(&build_dir)?;
     }
     fs::create_dir_all(&build_dir)?;
+
+    // Guard cleans up build dir + temp Rust on any exit path (success or error)
+    let mut _cleanup = UpgradeCleanup {
+        build_dir: Some(build_dir.clone()),
+        temp_rust: !rust_was_present,
+    };
 
     // Clone the repo at the target tag
     println!();
@@ -185,7 +213,6 @@ pub fn run_upgrade() -> Result<()> {
         .context("Failed to run git clone")?;
 
     if !status.success() {
-        fs::remove_dir_all(&build_dir)?;
         bail!(
             "git clone failed — tag '{}' may not exist on GitHub. \
              Check https://github.com/{}/releases for available versions.",
@@ -208,13 +235,11 @@ pub fn run_upgrade() -> Result<()> {
         .context("Failed to run cargo build")?;
 
     if !status.success() {
-        fs::remove_dir_all(&build_dir)?;
         bail!("cargo build failed. Check that Rust toolchain is up to date: rustup update");
     }
 
     let binary = repo_dir.join("target/release/cpac");
     if !binary.exists() {
-        fs::remove_dir_all(&build_dir)?;
         bail!("Build succeeded but binary not found at {}. Check Cargo.toml for correct binary name.", binary.display());
     }
 
@@ -243,7 +268,6 @@ pub fn run_upgrade() -> Result<()> {
             .context("Failed to copy binary with sudo")?;
 
         if !status.success() {
-            fs::remove_dir_all(&build_dir)?;
             bail!("Failed to install binary (sudo cp failed). Check that you have sudo access.");
         }
 
@@ -285,8 +309,7 @@ pub fn run_upgrade() -> Result<()> {
         let _ = fs::remove_file(&old_path);
     }
 
-    // Clean up build directory
-    fs::remove_dir_all(&build_dir)?;
+    // _cleanup guard handles build dir + temp Rust removal on drop
 
     // Verify
     println!();
@@ -334,6 +357,68 @@ fn command_exists(name: &str) -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// Install a temporary Rust toolchain for building.
+/// Uses rustup if available (Arch), otherwise falls back to rustup.rs installer.
+fn install_temporary_rust() -> Result<()> {
+    // Try pacman first (Arch-based)
+    if command_exists("pacman") {
+        let status = Command::new("sudo")
+            .args(["pacman", "-S", "--noconfirm", "rustup"])
+            .status()
+            .context("Failed to run pacman -S rustup")?;
+        if status.success() {
+            // Install stable toolchain
+            let _ = Command::new("rustup")
+                .args(["install", "stable"])
+                .status();
+            println!("{}", "Rust installed via pacman.".green());
+            return Ok(());
+        }
+    }
+
+    // Fallback: rustup.rs installer
+    println!("Installing Rust via rustup.rs...");
+    let status = Command::new("sh")
+        .args(["-c", "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable"])
+        .status()
+        .context("Failed to install Rust via rustup.rs")?;
+
+    if !status.success() {
+        bail!("Failed to install Rust. Please install manually: https://rustup.rs");
+    }
+
+    // Source cargo env for this process
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+    let cargo_bin = format!("{}/.cargo/bin", home);
+    if let Ok(path) = std::env::var("PATH") {
+        std::env::set_var("PATH", format!("{}:{}", cargo_bin, path));
+    }
+
+    println!("{}", "Rust installed via rustup.rs.".green());
+    Ok(())
+}
+
+/// Clean up temporary Rust toolchain if it was installed by us.
+fn cleanup_temporary_rust() {
+    println!();
+    println!("{}", "── Cleaning up temporary Rust toolchain ──".cyan());
+
+    // Try rustup self uninstall first
+    let status = Command::new("rustup")
+        .args(["self", "uninstall", "-y"])
+        .status();
+
+    if status.map(|s| s.success()).unwrap_or(false) {
+        println!("{}", "Temporary Rust toolchain removed.".green());
+    } else {
+        // Fallback: remove directories manually
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+        let _ = fs::remove_dir_all(format!("{}/.rustup", home));
+        let _ = fs::remove_dir_all(format!("{}/.cargo", home));
+        println!("{}", "Temporary Rust toolchain cleaned up.".green());
+    }
 }
 
 /// Check if another cpac process might be running (best-effort).

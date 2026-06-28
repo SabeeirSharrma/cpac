@@ -1,33 +1,33 @@
-# CPAC v0.9.1 — Patch: Direct Worker URL + Brand Fix
+# CPAC v0.9.2 — Patch: Self-Updater Installs Temporary Rust
 
 ## Overview
 
-Patch release fixing the trust-db connection (Cloudflare proxy SSL broken) and updating the AI report prompt branding.
+Patch release adding automatic temporary Rust toolchain installation to the self-updater. Users without Rust installed can now run `cpac upgrade` without manual setup.
 
 ---
 
 ## Changes
 
-### Trust-DB Connection Fix
+### Self-Updater — Temporary Rust Toolchain
 
-The custom domain proxy (`api.thecinderproject.qd.je`) has an SSL certificate provisioning issue. CPAC now connects directly to the Cloudflare Worker at `cpac-trust-db-api.sabplay-idk.workers.dev`.
+`cpac upgrade` now installs a temporary Rust toolchain if `cargo` is not found:
 
-**Files**: `src/trust_db.rs`
+- **Auto-detect**: checks for `cargo` before building
+- **Install**: uses `pacman -S rustup` on Arch, falls back to `rustup.rs` installer
+- **Cleanup**: removes temporary Rust toolchain after build (via Drop guard)
+- **Error-safe**: cleanup happens on success, failure, or cancellation
 
-### AI Report Prompt Brand Update
+Previously, users without Rust saw: `cargo is required for upgrades. Please install Rust and try again.`
 
-Weekly report insights now say "The Cinder Project, under the CPAC Trust DB division" instead of "The CPAC Trust DB project".
+Now it just works.
 
-**Files**: Worker `src/index.ts`
-
----
-
-## Files Changed (v0.9.1)
-
-- `Cargo.toml` — version bump to 0.9.1
-- `src/trust_db.rs` — direct worker URL
+**Files**: `src/upgrade.rs`
 
 ---
+
+# CPAC v0.9.1 — Patch: Direct Worker URL + Brand Fix
+
+_(see previous entry)_
 
 # CPAC v0.9.0 — Trust Scoring Overhaul & Polish
 
