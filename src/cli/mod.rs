@@ -5,7 +5,7 @@ use std::io::{self, IsTerminal, Write};
 use crate::{
     audit, cache, config,
     config::{CacheInterval, ConsentLevel},
-    diff, display, install, remove, resolver, trust, update,
+    diff, display, install, remove, resolver, trust, update, upgrade,
 };
 
 const TAGLINE: &str = "A package trust layer for Arch-based Linux";
@@ -40,6 +40,10 @@ fn cache_ref() -> Result<&'static cache::Cache> {
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+
+    /// Skip checking for CPAC updates on this run.
+    #[arg(long, global = true)]
+    no_check_updates: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -113,6 +117,9 @@ enum Commands {
 
     /// Clear the local metadata cache.
     ClearCache,
+
+    /// Upgrade CPAC to the latest version from GitHub.
+    Upgrade,
 }
 
 #[derive(Debug, Subcommand)]
@@ -238,6 +245,12 @@ pub fn run() -> Result<()> {
         return Ok(());
     };
 
+    // Skip update check for certain commands
+    let skip_update_check = matches!(
+        &command,
+        Commands::Upgrade | Commands::Config(_) | Commands::ClearCache
+    );
+
     match command {
         Commands::Search { query, all } => {
             let results = resolver::search(cache_ref()?, &query)?;
@@ -295,6 +308,14 @@ pub fn run() -> Result<()> {
             cache::clear_cache()?;
             println!("Cache cleared successfully.");
         }
+        Commands::Upgrade => {
+            upgrade::run_upgrade()?;
+        }
+    }
+
+    // Show update notice after command completes (unless skipped)
+    if !cli.no_check_updates && !skip_update_check {
+        upgrade::print_update_notice();
     }
 
     Ok(())

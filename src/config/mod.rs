@@ -91,6 +91,10 @@ pub struct Config {
     pub last_cache_clear: u64,
     #[serde(default)]
     pub first_run_done: bool,
+    #[serde(default)]
+    pub last_update_check: u64,
+    #[serde(default)]
+    pub cached_latest_version: Option<String>,
 }
 
 fn default_aur_enabled() -> bool {
@@ -105,6 +109,8 @@ impl Default for Config {
             cache_interval: CacheInterval::default(),
             last_cache_clear: 0,
             first_run_done: false,
+            last_update_check: 0,
+            cached_latest_version: None,
         }
     }
 }
@@ -194,4 +200,20 @@ pub fn mark_first_run_done() -> Result<()> {
 /// Returns true if the first-run consent prompt has been shown.
 pub fn is_first_run_done() -> bool {
     load().map(|c| c.first_run_done).unwrap_or(false)
+}
+
+/// Get current time in seconds since UNIX epoch.
+pub fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+/// Record that we checked for updates and cache the latest version found.
+pub fn set_update_check(latest_version: &str) -> Result<()> {
+    let mut config = load().unwrap_or_default();
+    config.last_update_check = now_secs();
+    config.cached_latest_version = Some(latest_version.to_string());
+    save(&config)
 }

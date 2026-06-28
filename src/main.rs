@@ -14,6 +14,7 @@ mod sanitize;
 mod trust;
 mod trust_db;
 mod update;
+mod upgrade;
 
 use anyhow::Result;
 

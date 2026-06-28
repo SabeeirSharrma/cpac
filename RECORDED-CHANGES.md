@@ -1,12 +1,26 @@
-# CPAC v0.8.0 — Panel Redesign, NVIDIA NIM AI, Cron Reports
+# CPAC v0.8.0 — Self-Update System, Panel Redesign, NVIDIA NIM AI, Cron Reports
 
 ## Overview
 
-Version 0.8.0 completes the CPAC Trust DB panel system with a unified Review workflow, connects AI analysis to NVIDIA NIM reasoning models, adds automated weekly email reports via Resend, and configures a daily cron trigger for report generation.
+Version 0.8.0 adds a self-update system with GitHub release integration, completes the CPAC Trust DB panel system with a unified Review workflow, connects AI analysis to NVIDIA NIM reasoning models, adds automated weekly email reports via Resend, and configures a daily cron trigger for report generation.
 
 ---
 
 ## Changes
+
+### Self-Update System
+
+New `cpac upgrade` command checks GitHub releases for newer versions and replaces the binary:
+
+- **Version check on every run** — non-blocking, cached 24 hours to avoid hitting GitHub API on every invocation
+- **`cpac upgrade`** — downloads the correct binary (x86_64 or aarch64) from GitHub releases, verifies SHA-256 checksum, replaces the running binary
+- **`--no-check-updates`** — global flag to skip version check on any command
+- **Colored notice** — after every command, if a newer version exists, shows `"A new version of CPAC is available: X.Y.Z (current: A.B.C) — Run cpac upgrade to upgrade."`
+- **Binary replacement** — renames current binary to `.old`, renames new to current, deletes `.old` (safe on Linux)
+- **Checksum verification** — downloads `sha256sums.txt` from release, verifies before replacing
+- **Config fields** — `last_update_check` (epoch seconds), `cached_latest_version` (version string) in `~/.cpac/config.toml`
+
+**Files**: `src/upgrade.rs` (new), `src/cli/mod.rs`, `src/config/mod.rs`, `src/main.rs`
 
 ### Panel Redesign — Unified Review Workflow
 
