@@ -4,6 +4,7 @@ use std::io::{self, IsTerminal, Write};
 
 use crate::{
     audit, cache, config,
+    backends::PackageInfo,
     config::{CacheInterval, ConsentLevel},
     diff, display, install, remove, resolver, trust, trust_db, update, upgrade,
 };
@@ -271,14 +272,46 @@ pub fn run() -> Result<()> {
         }
         Commands::Trust { package } => {
             let _ = trust_db::check_and_sync_if_stale();
-            let Some(pkg) = resolver::resolve(cache_ref()?, &package)? else {
-                bail!(
-                    "Package '{}' not found. Try 'cpac search {}' to find the correct name.",
-                    package, package
-                );
-            };
-            let report = trust::analyze(cache_ref()?, &pkg);
-            display::print_trust_report(&pkg, &report);
+            if let Some(pkg) = resolver::resolve(cache_ref()?, &package)? {
+                let report = trust::analyze(cache_ref()?, &pkg);
+                display::print_trust_report(&pkg, &report);
+            } else {
+                // Package not in any synced repo — check trust DB directly
+                match trust_db::lookup_advisory(&package) {
+                    Ok(Some(advisory)) => {
+                        use crate::backends::PackageSource;
+                        let pkg = PackageInfo {
+                            name: advisory.package.clone(),
+                            version: "unknown".to_string(),
+                            description: advisory.summary.clone(),
+                            source: PackageSource::Unknown,
+                            maintainer: Some(advisory.reported_by.clone()),
+                            votes: None,
+                            popularity: None,
+                            first_submitted: None,
+                            last_modified: None,
+                            out_of_date: false,
+                            orphan: false,
+                            url: None,
+                            licenses: vec![],
+                            depends: vec![],
+                            install_size: None,
+                        };
+                        let report = trust::analyze(cache_ref()?, &pkg);
+                        display::print_trust_report(&pkg, &report);
+                        println!(
+                            "  Note: '{}' is not in any synced repository. Trust data comes from the trust DB only.",
+                            package
+                        );
+                    }
+                    _ => {
+                        bail!(
+                            "Package '{}' not found in any repository or trust database. Try 'cpac search {}' to find the correct name.",
+                            package, package
+                        );
+                    }
+                }
+            }
         }
         Commands::Audit { package } => {
             let _ = trust_db::check_and_sync_if_stale();
