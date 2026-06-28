@@ -1,3 +1,30 @@
+# CPAC v0.7.2 Release Notes
+
+## Overview
+
+v0.7.2 adds paru preference to help text, fixes donate link trailing slash, and expands suspicious pattern detection for npm/bun pipe-to-shell attacks.
+
+## Changes
+
+- **Paru preference in help** — `cpac --help` now mentions Paru is preferred (yay still supported)
+- **Donate link trailing slash** — Fixed to `https://thecinderproject.qd.je/donate/`
+- **npm/bun pipe-to-shell detection** — Pass 2 now catches `npm install | sh`, `bun install | sh`, `npx | sh`, `curl | npx`, `wget | npx` patterns
+- **Unknown package behavior** — Local scoring still runs when package not in trust DB; missing DB data shown as neutral signals (+0), not penalties
+
+---
+
+# CPAC v0.7.1 Release Notes
+
+## Overview
+
+v0.7.1 adds a donate link to the help output and continues the multi-session site redesign.
+
+## Changes
+
+- **Donate link in help** — `cpac --help` now displays `Donate: https://thecinderproject.qd.je/donate`
+
+---
+
 # CPAC v0.7.0 Release Notes
 
 ## Overview

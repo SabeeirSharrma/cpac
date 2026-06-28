@@ -27,11 +27,14 @@ fn cache_ref() -> Result<&'static cache::Cache> {
     Made by The Cinder Project (https://thecinderproject.qd.je)
     Source: https://github.com/SabeeirSharrma/cpac
     Documentation: https://thecinderproject.qd.je/cpac/docs
+    Donate: https://thecinderproject.qd.je/donate/
     ═════════════════════════════════════════════════════════════════
 
     {}
     It analyzes packages from both official repositories and the AUR,
     providing detailed trust scores before you install anything.
+
+    AUR helpers: Paru is preferred, but yay is also supported.
     For more information, visit our documentation."#, TAGLINE)
 )]
 struct Cli {

@@ -47,6 +47,10 @@ cpac config path                 # show config file location
 cpac clear-cache                 # manually clear cache
 ```
 
+## AUR Helpers
+
+Paru is the preferred AUR helper, but yay is also supported. CPAC works with either — it detects what's installed and uses it for AUR operations.
+
 ## First Run
 
 On first launch, CPAC asks about crowdsourced data sharing (opt-in, anonymous). This can be changed anytime via `cpac config set consent`.
@@ -87,7 +91,9 @@ The trust algorithm uses metadata available from official repositories and the A
 - PKGBUILD diff results
 - **advisory warnings** (known malicious/compromised packages)
 - **snapshot divergence** (hash comparison with crowdsourced data)
-- **anomaly detection** (suspicious PKGBUILD patterns)
+- **anomaly detection** (suspicious PKGBUILD patterns including npm/bun pipe-to-shell)
+
+When a package has no data in the trust DB, local scoring still runs normally. Missing DB data is shown as neutral signals (+0), not penalties.
 
 See [docs/trust-algorithm.md](docs/trust-algorithm.md) for details.
 

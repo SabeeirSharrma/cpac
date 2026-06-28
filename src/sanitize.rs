@@ -268,13 +268,18 @@ pub fn detect_anomalies(content: &str) -> Vec<Anomaly> {
 }
 
 fn check_remote_execution(line: &str, line_num: usize) -> Option<Anomaly> {
-    let patterns: [(&str, &str); 6] = [
+    let patterns: [(&str, &str); 11] = [
         (r#"curl\s+.*\|\s*(ba)?sh"#, "curl | sh"),
         (r#"wget\s+.*\|\s*(ba)?sh"#, "wget | bash"),
         (r#"curl\s+.*-o\s+.*\s*&&.*sh"#, "curl download + execute"),
         (r#"wget\s+.*-O\s+.*\s*&&.*sh"#, "wget download + execute"),
         (r#"curl\s+.*\|\s*bash"#, "curl | bash"),
         (r#"wget\s+.*\|\s*bash"#, "wget | bash"),
+        (r#"npm\s+install\s+.*\|\s*(ba)?sh"#, "npm install | sh"),
+        (r#"bun\s+install\s+.*\|\s*(ba)?sh"#, "bun install | sh"),
+        (r#"npx\s+.*\|\s*(ba)?sh"#, "npx | sh"),
+        (r#"curl\s+.*\|\s*npx"#, "curl | npx"),
+        (r#"wget\s+.*\|\s*npx"#, "wget | npx"),
     ];
 
     for (pattern, desc) in &patterns {
