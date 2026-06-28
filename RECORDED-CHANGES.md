@@ -1,3 +1,75 @@
+# CPAC v0.8.0 — Panel Redesign, NVIDIA NIM AI, Cron Reports
+
+## Overview
+
+Version 0.8.0 completes the CPAC Trust DB panel system with a unified Review workflow, connects AI analysis to NVIDIA NIM reasoning models, adds automated weekly email reports via Resend, and configures a daily cron trigger for report generation.
+
+---
+
+## Changes
+
+### Panel Redesign — Unified Review Workflow
+
+All three panels (volunteer, maintainer, admin) share a new "Review" tab replacing the old "Comparer" tab:
+
+- **Package list** auto-fetched on tab load (packages needing advisories: no advisory or outdated)
+- **Automated LCS diff** runs on package select
+- **AI analysis** on-demand via NVIDIA NIM (3-hour cache)
+- **Layout toggle** — Tabs or Side-by-Side, persisted to `localStorage`
+- **Notes system** — floating button, textarea overlay, auto-saves to `localStorage`, cleared on publish
+- **"Recompare"** button for manual re-run
+
+### NVIDIA NIM Integration
+
+AI analysis connected to NVIDIA NIM free tier (no credit card required):
+
+- **Reasoning model** (`nvidia/nemotron-3-super-120b-a12b`) for PKGBUILD diff security analysis
+- **Nano model** (`nvidia/nemotron-3-nano-30b-a3b`) for weekly report insights
+- Worker endpoints: `POST /ai/analyze-diff`, `POST /ai/generate-report`
+- Structured JSON response: recommendation, analysis, summary, severity, affected/safe versions, references
+- Server-side API key (NVIDIA key never exposed to browser)
+
+### Automated Weekly Email Reports
+
+- Resend integration for transactional emails
+- Reports generated daily, sent exactly 7 days after previous report per user (DOW matching)
+- Staggered schedule based on account creation date (spreads across week, stays under 100/day quota)
+- Zero activity = no email that week
+- Reports sent as HTML table in email body, stored→sent→deleted (ephemeral)
+
+### Cloudflare Cron Trigger
+
+- Daily cron at midnight UTC (`0 0 * * *`)
+- Worker `scheduled()` handler calls `/reports/generate` then `/reports/send`
+- Worker config migrated from `wrangler.toml` to `wrangler.jsonc` (preferred format)
+
+### Account Management
+
+- Admin panel can create volunteer/maintainer accounts (random password, emailed via Resend)
+- Account creation via Worker endpoint (`POST /accounts/create`)
+- No public signups — accounts created by admin only
+
+### RLS Recursion Fix
+
+- `SECURITY DEFINER` helper functions (`is_admin()`, `is_maintainer()`, `is_volunteer()`) prevent recursive RLS on profiles table
+- All panel auth uses `currentSession.access_token` as Bearer token
+
+### Panel Data — Direct Supabase
+
+- Panels call Supabase REST API directly for snapshots, advisories, ai_analysis, pending_advisories, RPC calls
+- Worker direct URL (`https://cpac-trust-db-api.sabplay-idk.workers.dev`) for AUR proxy and account creation
+
+---
+
+## Files Changed (v0.8.0)
+
+- `worker/wrangler.jsonc` — new config file (replaces wrangler.toml), adds `NVIDIA_API_KEY`, cron trigger
+- `worker/src/index.ts` — `scheduled()` handler, `callNvidiaNim()`, `/ai/analyze-diff`, `/ai/generate-report`, `/accounts/create`, `/reports/generate`, `/reports/send`
+- `worker/src/resend.ts` — Resend SDK, email templates, weekly report HTML builder
+- `supabase/migrations/20260629000005_fix_rls_recursion.sql` — SECURITY DEFINER helpers
+
+---
+
 # CPAC v0.7.0 — Trust DB Integration & PKGBUILD Sanitization
 
 ## Overview

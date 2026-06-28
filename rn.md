@@ -1,3 +1,57 @@
+# CPAC v0.8.0 Release Notes
+
+## Overview
+
+v0.8.0 completes the Trust DB panel system with a unified Review workflow, connects AI analysis to NVIDIA NIM reasoning models, adds automated weekly email reports, and configures a daily cron trigger. This is the first release with a fully operational advisory pipeline.
+
+## Changes
+
+### Panel Redesign — Unified Review Workflow
+
+All three panels (volunteer, maintainer, admin) now share a single "Review" tab:
+
+- **Package list** — auto-fetched on load, shows packages needing advisories
+- **Automated compare** — LCS diff runs on package select, highlights suspicious patterns
+- **AI analysis** — on-demand via NVIDIA NIM, structured response with recommendation, summary, severity, affected/safe versions
+- **Layout toggle** — Tabs or Side-by-Side, persisted to `localStorage`
+- **Notes system** — floating notes button, auto-saved per package, cleared on publish
+- **Recompare** — re-run with different versions
+
+### NVIDIA NIM AI Integration
+
+- Worker proxies requests to NVIDIA NIM (API key stays server-side)
+- Reasoning model (`nemotron-3-super-120b-a12b`) for security-focused diff analysis
+- Nano model (`nemotron-3-nano-30b-a3b`) for weekly report summaries
+- 3-hour cache in Supabase `ai_analysis` table
+
+### Weekly Email Reports via Resend
+
+- Reports generated daily, sent exactly 7 days after previous report per user
+- Staggered by account creation date (Mon→Mon, Wed→Wed, etc.)
+- HTML table in email body with submissions, approval rate, trust tier
+- Zero activity = no email that week
+- Ephemeral: stored→sent→deleted
+
+### Cloudflare Cron Trigger
+
+- Daily at midnight UTC (`0 0 * * *`)
+- Calls `/reports/generate` then `/reports/send`
+- Worker config migrated to `wrangler.jsonc`
+
+### Account Management
+
+- Admin panel creates volunteer/maintainer accounts (random password emailed via Resend)
+- No public signups — admin-only account creation
+- `POST /accounts/create` endpoint on Worker
+
+### RLS & Auth Fixes
+
+- `SECURITY DEFINER` functions prevent recursive RLS on profiles
+- All panel auth uses `currentSession.access_token` as Bearer token
+- Panels call Supabase REST API directly (Worker proxy URL unreachable due to missing DNS CNAME — now fixed)
+
+---
+
 # CPAC v0.7.2 Release Notes
 
 ## Overview
