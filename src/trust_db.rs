@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -167,17 +168,40 @@ fn staleness_days(last_sync: &str) -> Option<i64> {
 pub fn check_and_sync_if_stale() -> Result<bool> {
     let advisories = match fetch_advisories() {
         Ok(a) => a,
-        Err(e) => {
+        Err(_) => {
             let local = load_local_meta();
             if let Some(ref meta) = local {
                 if let Some(days) = staleness_days(&meta.last_sync) {
                     eprintln!();
-                    eprintln!("  WARNING: Trust database offline — using stale local cache");
-                    eprintln!("  Last sync: {} day(s) ago", days);
-                    eprintln!("  Run 'cpac update' when online to refresh.");
+                    eprintln!("  Current local cache is stale ({} day(s) old).", days);
+                    eprintln!("  This may lead to inaccuracies in trust scores.");
+                    eprintln!();
+                    if io::stdin().is_terminal() {
+                        print!("  Would you like to attempt an update? [y/N] ");
+                        io::stdout().flush()?;
+                        let mut input = String::new();
+                        let bytes_read = io::stdin().read_line(&mut input)?;
+                        let choice = input.trim();
+                        if bytes_read > 0 && (choice.eq_ignore_ascii_case("y") || choice.eq_ignore_ascii_case("yes")) {
+                            eprintln!("  Attempting update...");
+                            match sync() {
+                                Ok(result) => {
+                                    eprintln!("  {}", result);
+                                    return Ok(true);
+                                }
+                                Err(e) => {
+                                    eprintln!("  Update failed: {}. Continuing with stale cache.", e);
+                                }
+                            }
+                        } else {
+                            eprintln!("  Continuing with stale cache.");
+                        }
+                    } else {
+                        eprintln!("  Run 'cpac update' when online to refresh.");
+                    }
                     eprintln!();
                 } else {
-                    eprintln!("Warning: Could not reach trust-db server: {}. Using local cache.", e);
+                    eprintln!("Warning: Could not reach trust-db server. Using local cache.");
                 }
             } else {
                 eprintln!();
