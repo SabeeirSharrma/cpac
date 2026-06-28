@@ -148,19 +148,23 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
 
         if !has_db_data {
             println!("\n  Trust score based on local signals only.");
-            // Auto-queue snapshot for contribution (respecting consent)
+            println!("  We do not have data on this package in the CPAC Trust DB.");
+            // Ask for contribution if consent is not Full (Full already auto-queues)
             let consent = config::load().map(|c| c.consent).unwrap_or_default();
-            if consent != config::ConsentLevel::None {
-                if let Ok(Some(ref pkgbuild_text)) = fetch_pkgbuild_for_install(&pkg) {
-                    let hash = crate::sanitize::sha256_hash(pkgbuild_text);
-                    let pkgbuild_opt = if consent == config::ConsentLevel::Full {
-                        let sanitized = crate::sanitize::sanitize_pkgbuild(pkgbuild_text);
-                        Some(sanitized.text)
-                    } else {
-                        None
-                    };
-                    if let Err(e) = trust_db::queue_snapshot(&pkg.name, &pkg.version, &hash, pkgbuild_opt) {
-                        eprintln!("Note: Snapshot queuing failed (non-critical): {}", e);
+            if consent != config::ConsentLevel::Full {
+                let default_yes = matches!(consent, config::ConsentLevel::None | config::ConsentLevel::Hash);
+                if prompt::prompt_contribute_package(default_yes)? {
+                    if let Ok(Some(ref pkgbuild_text)) = fetch_pkgbuild_for_install(&pkg) {
+                        let hash = crate::sanitize::sha256_hash(pkgbuild_text);
+                        let pkgbuild_opt = if consent == config::ConsentLevel::Hash {
+                            let sanitized = crate::sanitize::sanitize_pkgbuild(pkgbuild_text);
+                            Some(sanitized.text)
+                        } else {
+                            None
+                        };
+                        if let Err(e) = trust_db::queue_snapshot(&pkg.name, &pkg.version, &hash, pkgbuild_opt) {
+                            eprintln!("Note: Snapshot queuing failed (non-critical): {}", e);
+                        }
                     }
                 }
             }

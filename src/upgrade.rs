@@ -209,13 +209,13 @@ pub fn run_upgrade() -> Result<()> {
 
     if !status.success() {
         fs::remove_dir_all(&build_dir)?;
-        bail!("cargo build failed");
+        bail!("cargo build failed. Check that Rust toolchain is up to date: rustup update");
     }
 
     let binary = repo_dir.join("target/release/cpac");
     if !binary.exists() {
         fs::remove_dir_all(&build_dir)?;
-        bail!("Build succeeded but binary not found at {}", binary.display());
+        bail!("Build succeeded but binary not found at {}. Check Cargo.toml for correct binary name.", binary.display());
     }
 
     // Find the current binary path
@@ -244,7 +244,7 @@ pub fn run_upgrade() -> Result<()> {
 
         if !status.success() {
             fs::remove_dir_all(&build_dir)?;
-            bail!("Failed to install binary (sudo cp failed)");
+            bail!("Failed to install binary (sudo cp failed). Check that you have sudo access.");
         }
 
         // Make executable

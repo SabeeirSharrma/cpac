@@ -124,7 +124,7 @@ fn update_aur_databases() -> Result<()> {
             .status()
             .context("Failed to run paru -Sy")?;
         if !status.success() {
-            anyhow::bail!("paru -Sy failed with exit code: {}", status);
+            anyhow::bail!("paru -Sy failed with exit code: {}. Check your network connection and try again.", status);
         }
     } else if Command::new("yay").arg("--version").output().is_ok() {
         let status = Command::new("yay")
@@ -132,10 +132,10 @@ fn update_aur_databases() -> Result<()> {
             .status()
             .context("Failed to run yay -Sy")?;
         if !status.success() {
-            anyhow::bail!("yay -Sy failed with exit code: {}", status);
+            anyhow::bail!("yay -Sy failed with exit code: {}. Check your network connection and try again.", status);
         }
     } else {
-        anyhow::bail!("No AUR helper (paru or yay) found");
+        anyhow::bail!("No AUR helper (paru or yay) found. Install paru: https://github.com/Morganamilo/paru#installation");
     }
 
     Ok(())

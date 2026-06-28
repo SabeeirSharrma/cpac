@@ -12,7 +12,9 @@ pub fn run(cache: &Cache, package: &str) -> Result<()> {
     // Resolve the package
     let Some(pkg) = resolver::resolve(cache, package)? else {
         bail!(
-            "Package '{}' not found in official repositories or AUR",
+            "Package '{}' not found in official repositories or AUR.\n\
+            Try 'cpac search {}' to find the correct name.",
+            package,
             package
         );
     };

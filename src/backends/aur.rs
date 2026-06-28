@@ -176,7 +176,7 @@ pub fn fetch_pkgbuild(package: &str) -> Result<Option<String>> {
         if status.as_u16() == 404 {
             return Ok(None);
         }
-        return Err(anyhow!("AUR returned client error {} for package '{}'", status, package));
+        return Err(anyhow!("AUR returned client error {} for package '{}'. Try 'cpac search {}' to verify the name.", status, package, package));
     }
     if status.is_server_error() {
         return Err(anyhow!("AUR server error {} for package '{}'. Try again later.", status, package));

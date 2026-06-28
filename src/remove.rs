@@ -18,7 +18,7 @@ pub fn run(cache: &Cache, package: &str, recursive: bool, force: bool) -> Result
 
     // Get package info for trust analysis
     let Some(pkg) = resolver::resolve(cache, package)? else {
-        bail!("Package '{}' not found in repositories", package);
+        bail!("Package '{}' not found in repositories. Try 'cpac search {}' to find the correct name.", package, package);
     };
 
     // Show trust analysis (unless forced)
