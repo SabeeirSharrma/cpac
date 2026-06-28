@@ -5,7 +5,7 @@ use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
-const API_URL: &str = "https://api.thecinderproject.qd.je/cpac-trust-db/api";
+const API_URL: &str = "https://cpac-trust-db-api.sabplay-idk.workers.dev/cpac-trust-db/api";
 
 /// An advisory from the trust database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
