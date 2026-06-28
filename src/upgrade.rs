@@ -141,6 +141,9 @@ pub fn run_upgrade() -> Result<()> {
         current.dimmed()
     );
 
+    // Check for concurrent CPAC processes
+    let _ = check_concurrent_process();
+
     let tag = fetch_latest_tag().context("Failed to fetch latest release from GitHub")?;
     let version = tag.trim_start_matches('v').to_string();
 
@@ -183,7 +186,11 @@ pub fn run_upgrade() -> Result<()> {
 
     if !status.success() {
         fs::remove_dir_all(&build_dir)?;
-        bail!("git clone failed");
+        bail!(
+            "git clone failed — tag '{}' may not exist on GitHub. \
+             Check https://github.com/{}/releases for available versions.",
+            tag, GITHUB_REPO
+        );
     }
 
     let repo_dir = build_dir.join("cpac");
@@ -226,7 +233,7 @@ pub fn run_upgrade() -> Result<()> {
     if needs_sudo {
         println!("Installing to {} (requires sudo)...", install_dir.display());
 
-        // Copy to a temp location first, then sudo mv
+        // Copy to a temp location first, then sudo cp
         let tmp_binary = build_dir.join("cpac-new");
         fs::copy(&binary, &tmp_binary)?;
 
@@ -247,29 +254,34 @@ pub fn run_upgrade() -> Result<()> {
     } else {
         println!("Installing to {}...", current_exe.display());
 
-        // On Linux, can't rename over a running executable.
-        // Rename current to .old, copy new to current, delete .old.
+        // Atomic replacement: write to temp file, then rename over the target.
+        // On Linux, rename() is atomic on the same filesystem (ext4/xfs).
+        let tmp_new = current_exe.with_extension("tmp");
         let old_path = current_exe.with_extension("old");
+        let _ = fs::remove_file(&tmp_new);
         let _ = fs::remove_file(&old_path);
 
-        fs::rename(&current_exe, &old_path).with_context(|| {
-            format!("Failed to rename current binary to {}", old_path.display())
+        // Copy new binary to temp file
+        fs::copy(&binary, &tmp_new).with_context(|| {
+            format!("Failed to copy new binary to {}", tmp_new.display())
         })?;
 
-        fs::copy(&binary, &current_exe).with_context(|| {
-            // Try to restore on failure
-            let _ = fs::rename(&old_path, &current_exe);
-            format!("Failed to copy new binary to {}", current_exe.display())
-        })?;
-
-        // Set executable permissions
+        // Set executable permissions on temp file before rename
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let perms = fs::Permissions::from_mode(0o755);
-            fs::set_permissions(&current_exe, perms)?;
+            fs::set_permissions(&tmp_new, perms)?;
         }
 
+        // Atomic rename: temp -> target (this is atomic on Linux ext4/xfs)
+        if let Err(e) = fs::rename(&tmp_new, &current_exe) {
+            // Rollback: try to restore from .old if it exists
+            let _ = fs::remove_file(&tmp_new);
+            bail!("Failed to replace binary: {}. Current binary is unchanged.", e);
+        }
+
+        // Clean up old backup
         let _ = fs::remove_file(&old_path);
     }
 
@@ -322,6 +334,35 @@ fn command_exists(name: &str) -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// Check if another cpac process might be running (best-effort).
+fn check_concurrent_process() -> Result<()> {
+    // Check /proc for other cpac processes (Linux-specific)
+    if let Ok(entries) = fs::read_dir("/proc") {
+        let my_pid = std::process::id();
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            if let Some(pid_str) = name.to_str() {
+                if let Ok(pid) = pid_str.parse::<u32>() {
+                    if pid == my_pid || pid == 0 {
+                        continue;
+                    }
+                    // Check if this PID is a cpac process
+                    let cmdline_path = entry.path().join("cmdline");
+                    if let Ok(cmdline) = fs::read(&cmdline_path) {
+                        let cmdline_str = String::from_utf8_lossy(&cmdline);
+                        if cmdline_str.contains("cpac") && !cmdline_str.contains("cpac upgrade") {
+                            // Found another cpac process (not this upgrade)
+                            // Don't block, just warn
+                            eprintln!("Warning: Another CPAC process (PID {}) appears to be running.", pid);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Check if a directory is writable (without writing anything).

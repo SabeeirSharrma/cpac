@@ -1,6 +1,6 @@
 [package]
 name = "cpac"
-version = "0.8.1"
+version = "0.9.0"
 edition = "2021"
 authors = ["Sabeeir Sharrma"]
 description = "Community Package Analysis Client — a package trust layer for Arch-based Linux"

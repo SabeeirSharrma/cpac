@@ -110,21 +110,15 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         });
         pts
     } else {
-        // No age data available - neutral score with clear "metadata unavailable" reason
+        // No age data available — neutral, zero contribution
         age_unknown = true;
-        let pts = match &pkg.source {
-            PackageSource::Official { .. } => 13,
-            PackageSource::ThirdParty => 8, // Partial credit - metadata not tracked by distro repos
-            PackageSource::Aur => 5,        // Partial credit - AUR doesn't always track age
-            PackageSource::Unknown => 5,    // Neutral default
-        };
         signals.push(TrustSignal {
             name: "Package Age".to_string(),
-            points: pts,
+            points: 0,
             max_points: 15,
-            detail: "Metadata unavailable".to_string(),
+            detail: "Metadata unavailable — no penalty".to_string(),
         });
-        pts
+        0
     };
     total += age_points;
 
@@ -153,21 +147,15 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         });
         pts
     } else {
-        // No maintainer info available - neutral, not negative
+        // No maintainer info available — neutral, zero contribution
         maintainer_unknown = true;
-        let pts = match &pkg.source {
-            PackageSource::Official { .. } => 10,
-            PackageSource::ThirdParty => 5,
-            PackageSource::Aur => 5,
-            PackageSource::Unknown => 5,
-        };
         signals.push(TrustSignal {
             name: "Maintainer".to_string(),
-            points: pts,
+            points: 0,
             max_points: 15,
-            detail: "Metadata unavailable".to_string(),
+            detail: "Metadata unavailable — no penalty".to_string(),
         });
-        pts
+        0
     };
     total += maintainer_points;
 
@@ -189,21 +177,15 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         });
         pts
     } else {
-        // No popularity data - neutral, not negative
-        let pts = match &pkg.source {
-            PackageSource::Official { .. } => 12,
-            PackageSource::ThirdParty => 5,
-            PackageSource::Aur => 5,
-            PackageSource::Unknown => 5,
-        };
+        // No popularity data — neutral, zero contribution
+        pop_unknown = true;
         signals.push(TrustSignal {
             name: "Popularity".to_string(),
-            points: pts,
+            points: 0,
             max_points: 15,
-            detail: "Metadata unavailable".to_string(),
+            detail: "Metadata unavailable — no penalty".to_string(),
         });
-        pop_unknown = true;
-        pts
+        0
     };
     total += pop_points;
 
@@ -227,21 +209,15 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         });
         pts
     } else {
-        // No recency data - neutral, not negative
-        let pts = match &pkg.source {
-            PackageSource::Official { .. } => 12,
-            PackageSource::ThirdParty => 5,
-            PackageSource::Aur => 5,
-            PackageSource::Unknown => 5,
-        };
+        // No recency data — neutral, zero contribution
+        recency_unknown = true;
         signals.push(TrustSignal {
             name: "Last Updated".to_string(),
-            points: pts,
+            points: 0,
             max_points: 15,
-            detail: "Metadata unavailable".to_string(),
+            detail: "Metadata unavailable — no penalty".to_string(),
         });
-        recency_unknown = true;
-        pts
+        0
     };
     total += recency_points;
 
@@ -257,6 +233,7 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
     }
 
     // --- Signal 7: Security Advisory ---
+    let mut advisory_floor: Option<&str> = None;
     if let Ok(Some(advisory)) = crate::trust_db::lookup_advisory(&pkg.name) {
         let penalty = crate::trust_db::advisory_penalty(&advisory);
         signals.push(TrustSignal {
@@ -269,6 +246,7 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
             ),
         });
         total += penalty;
+        advisory_floor = Some(crate::trust_db::advisory_floor(&advisory));
     }
 
     // Count unknown vs negative signals
@@ -287,9 +265,8 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
     // Clamp to 0..100
     let score = total.clamp(0, 100) as u32;
 
-    // Adjust recommendation: if all non-positive signals are just unknown metadata (no actual negative signals),
-    // don't penalize packages that only have missing metadata
-    let recommendation = if negative_signals == 0 && unknown_count > 0 {
+    // Compute base recommendation
+    let mut recommendation = if negative_signals == 0 && unknown_count > 0 {
         // No actual negative signals, only missing metadata - don't go below Moderate
         match score {
             60..=100 => "Safe",
@@ -298,19 +275,32 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         }
     } else {
         recommendation(score)
-    };
+    }.to_string();
+
+    // Enforce advisory floor: advisory status can only raise the recommendation, never lower it
+    if let Some(floor) = advisory_floor {
+        if !floor.is_empty() {
+            let floor_rank = recommendation_rank(floor);
+            let current_rank = recommendation_rank(&recommendation);
+            if floor_rank > current_rank {
+                recommendation = floor.to_string();
+            }
+        }
+    }
 
     let report = TrustReport {
         package_name: pkg.name.clone(),
         tier,
         score,
         signals,
-        recommendation: recommendation.to_string(),
+        recommendation,
     };
 
     // Cache the report
     if let Ok(serialized) = serde_json::to_vec(&report) {
-        let _ = cache.insert_trust(&cache_key, serialized);
+        if let Err(e) = cache.insert_trust(&cache_key, serialized) {
+            eprintln!("Warning: Cache write failed (trust): {}", e);
+        }
     }
 
     report
@@ -324,6 +314,18 @@ pub fn recommendation(score: u32) -> &'static str {
         40..=59 => "Caution",
         20..=39 => "Warning",
         _ => "Danger",
+    }
+}
+
+/// Rank a recommendation label for comparison (higher = worse).
+fn recommendation_rank(rec: &str) -> u8 {
+    match rec {
+        "Safe" => 0,
+        "Moderate" => 1,
+        "Caution" => 2,
+        "Warning" => 3,
+        "Danger" => 4,
+        _ => 0,
     }
 }
 
@@ -636,10 +638,10 @@ mod tests {
         let cache = test_cache();
         let report = analyze(cache, &pkg);
 
-        // Score should be: 15 (ThirdParty) + 8 (age) + 5 (maintainer) + 5 (popularity) + 5 (recency) = 38
-        // But with floor at Moderate, recommendation should be "Moderate"
+        // Score should be: 15 (ThirdParty) + 0 + 0 + 0 + 0 = 15
+        // With floor at Moderate when only missing metadata
         assert_eq!(report.recommendation, "Moderate");
-        assert!(report.score >= 38 && report.score <= 45); // Approximate range
+        assert_eq!(report.score, 15);
 
         // Verify no negative signals
         let negative_signals = report.signals.iter().filter(|s| s.points < 0).count();
@@ -649,17 +651,17 @@ mod tests {
         let unknown_signals = report
             .signals
             .iter()
-            .filter(|s| s.detail == "Metadata unavailable")
+            .filter(|s| s.detail == "Metadata unavailable — no penalty")
             .count();
         assert_eq!(
             unknown_signals, 4,
-            "Should have 4 signals with 'Metadata unavailable'"
+            "Should have 4 signals with 'Metadata unavailable — no penalty'"
         );
     }
 
     #[test]
     fn official_package_with_unknown_metadata_stays_safe() {
-        // Official packages should still get SAFE with unknown metadata
+        // Official package with known maintainer but unknown age/popularity/recency
         let mut pkg = make_third_party_pkg("official-test");
         pkg.source = Official {
             repo: "core".to_string(),
@@ -670,9 +672,10 @@ mod tests {
         let cache = test_cache();
         let report = analyze(cache, &pkg);
 
-        // Official base score: 30 (source) + 13 (age) + 13 (maintainer) + 12 (popularity) + 12 (recency) = 80
-        assert_eq!(report.recommendation, "Safe");
-        assert_eq!(report.score, 80);
+        // Score: 30 (Official) + 0 (age unknown) + 13 (maintainer) + 0 (pop unknown) + 0 (recency unknown) = 43
+        // With missing metadata floor (unknown_count > 0, no negative signals), floors at "Moderate"
+        assert_eq!(report.recommendation, "Moderate");
+        assert_eq!(report.score, 43);
     }
 
     #[test]

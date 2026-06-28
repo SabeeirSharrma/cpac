@@ -209,7 +209,6 @@ impl std::fmt::Display for AnomalyCategory {
 /// Checks for suspicious patterns that indicate compromise, regardless of
 /// whether the hash is known. This catches new attacks that haven't been
 /// submitted to the trust DB yet.
-#[allow(dead_code)]
 pub fn detect_anomalies(content: &str) -> Vec<Anomaly> {
     let mut anomalies = Vec::new();
     let lines: Vec<&str> = content.lines().collect();

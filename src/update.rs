@@ -21,11 +21,10 @@ pub fn run(cache: &Cache, force_aur: bool) -> Result<()> {
     // Update AUR if enabled or explicitly requested
     if should_update_aur {
         if !aur_enabled && force_aur {
-            println!("AUR is disabled. Run 'cpac aur enable' to allow AUR updates.");
-        } else {
-            println!("Updating AUR package databases...");
-            update_aur_databases().context("Failed to update AUR databases")?;
+            println!("AUR is disabled but --aur was passed. Forcing AUR update...");
         }
+        println!("Updating AUR package databases...");
+        update_aur_databases().context("Failed to update AUR databases")?;
     }
 
     // Repository state changed, so cached package metadata is no longer trustworthy.

@@ -153,24 +153,55 @@ fn fetch_snapshots() -> Result<Vec<SnapshotEntry>> {
     Ok(snapshots)
 }
 
+/// Compute staleness in days from a last_sync timestamp.
+fn staleness_days(last_sync: &str) -> Option<i64> {
+    use chrono::DateTime;
+    let parsed = DateTime::parse_from_rfc3339(last_sync).ok()?;
+    let now = chrono::Utc::now();
+    let parsed_utc: chrono::DateTime<chrono::Utc> = parsed.naive_utc().and_utc();
+    Some((now - parsed_utc).num_days())
+}
+
 /// Check if the local cache is stale and sync if needed.
 /// Returns true if a sync was performed.
 pub fn check_and_sync_if_stale() -> Result<bool> {
     let advisories = match fetch_advisories() {
         Ok(a) => a,
         Err(e) => {
-            eprintln!("Warning: Could not reach trust-db server: {}", e);
+            let local = load_local_meta();
+            if let Some(ref meta) = local {
+                if let Some(days) = staleness_days(&meta.last_sync) {
+                    eprintln!();
+                    eprintln!("  WARNING: Trust database offline — using stale local cache");
+                    eprintln!("  Last sync: {} day(s) ago", days);
+                    eprintln!("  Run 'cpac update' when online to refresh.");
+                    eprintln!();
+                } else {
+                    eprintln!("Warning: Could not reach trust-db server: {}. Using local cache.", e);
+                }
+            } else {
+                eprintln!();
+                eprintln!("  ERROR: Cannot connect to trust database and no local cache exists.");
+                eprintln!("  Run 'cpac update' when online to initialize the trust database.");
+                eprintln!();
+            }
             return Ok(false);
         }
     };
 
+    let snapshots = fetch_snapshots().unwrap_or_default();
+
+    let remote_version = compute_version(&advisories, &snapshots);
     let local = load_local_meta();
     let needs_sync = match local {
-        Some(ref meta) => meta.advisory_count != advisories.len(),
+        Some(ref meta) => meta.version != remote_version,
         None => true,
     };
 
     if needs_sync {
+        // Store remote version hash for delta detection on next update
+        let _ = store_pending_version(&remote_version);
+
         eprintln!("Trust database is out of date, syncing...");
         let result = if local.is_some() {
             sync_delta()
@@ -274,6 +305,11 @@ pub fn sync_delta() -> Result<SyncResult> {
         None => return sync(), // No local cache — full sync needed
     };
 
+    // If there's a pending version from a previous failed check, do a full sync
+    if take_pending_version().is_some() {
+        return sync();
+    }
+
     let new_advisories = fetch_advisories_since(since).unwrap_or_default();
     let new_snapshots = fetch_snapshots_since(since).unwrap_or_default();
 
@@ -360,7 +396,6 @@ pub fn lookup_advisory(package: &str) -> Result<Option<Advisory>> {
 }
 
 /// Look up snapshots for a specific package from local cache.
-#[allow(dead_code)]
 pub fn lookup_snapshots(package: &str) -> Result<Vec<SnapshotEntry>> {
     let path = snapshots_path()?;
     if !path.exists() {
@@ -444,7 +479,7 @@ pub fn advisory_penalty(advisory: &Advisory) -> i32 {
         "safe" => 10,
         "suspicious" => -15,
         "warning" => -20,
-        "malicious" => -30,
+        "malicious" | "confirmed_malicious" => -30,
         "resolved" => 0,
         // Backwards compat for old status values in local cache
         "confirmed" => -20, // old "confirmed" maps to "warning"
@@ -457,7 +492,7 @@ pub fn advisory_penalty(advisory: &Advisory) -> i32 {
 #[allow(dead_code)]
 pub fn advisory_floor(advisory: &Advisory) -> &'static str {
     match advisory.status.as_str() {
-        "malicious" => "Danger",
+        "malicious" | "confirmed_malicious" => "Danger",
         "warning" => "Warning",
         "suspicious" => "Caution",
         "safe" => "",
@@ -490,6 +525,28 @@ fn pending_queue_path() -> Result<PathBuf> {
 /// Path to the local client token file.
 fn token_path() -> Result<PathBuf> {
     Ok(trust_db_dir()?.join("token"))
+}
+
+/// Path to the pending remote version hash (for offline delta detection).
+fn pending_version_path() -> Result<PathBuf> {
+    Ok(trust_db_dir()?.join("pending_version"))
+}
+
+/// Store the remote version hash when we detect a difference but can't sync yet.
+pub fn store_pending_version(version: &str) -> Result<()> {
+    let dir = trust_db_dir()?;
+    fs::create_dir_all(&dir)?;
+    fs::write(pending_version_path()?, version)?;
+    Ok(())
+}
+
+/// Load and clear the pending remote version hash.
+pub fn take_pending_version() -> Option<String> {
+    let path = pending_version_path().ok()?;
+    let version = fs::read_to_string(&path).ok()?;
+    let _ = fs::remove_file(&path);
+    let version = version.trim().to_string();
+    if version.is_empty() { None } else { Some(version) }
 }
 
 /// Get or create an anonymous client token for rate limiting.

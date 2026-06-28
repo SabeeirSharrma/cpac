@@ -64,6 +64,18 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
             let anomalies = crate::sanitize::detect_anomalies(&pkgbuild);
             if !anomalies.is_empty() {
                 println!("{}", crate::sanitize::format_anomalies(&anomalies));
+
+                // Apply cumulative anomaly penalty to trust score
+                let anomaly_penalty: i32 = anomalies.iter().map(|a| a.penalty).sum();
+                report.signals.push(trust::TrustSignal {
+                    name: "PKGBUILD Anomalies".to_string(),
+                    points: anomaly_penalty,
+                    max_points: 0,
+                    detail: format!("{} suspicious pattern(s) detected", anomalies.len()),
+                });
+                let total: i32 = report.signals.iter().map(|s| s.points).sum();
+                report.score = total.clamp(0, 100) as u32;
+                report.recommendation = trust::recommendation(report.score).to_string();
             }
 
             // Apply score adjustment from pre-flight
@@ -122,6 +134,35 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
 
         // Display trust report
         crate::display::print_trust_report(&pkg, &report);
+
+        // Check if package is unknown to the trust DB (no advisory, no snapshots)
+        let has_db_data = trust_db::lookup_advisory(&pkg.name)
+            .ok()
+            .flatten()
+            .is_some()
+            || trust_db::lookup_snapshots(&pkg.name)
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
+
+        if !has_db_data {
+            println!("\n  Trust score based on local signals only.");
+            // Auto-queue snapshot for contribution (respecting consent)
+            let consent = config::load().map(|c| c.consent).unwrap_or_default();
+            if consent != config::ConsentLevel::None {
+                if let Ok(Some(ref pkgbuild_text)) = fetch_pkgbuild_for_install(&pkg) {
+                    let hash = crate::sanitize::sha256_hash(pkgbuild_text);
+                    let pkgbuild_opt = if consent == config::ConsentLevel::Full {
+                        let sanitized = crate::sanitize::sanitize_pkgbuild(pkgbuild_text);
+                        Some(sanitized.text)
+                    } else {
+                        None
+                    };
+                    if let Err(e) = trust_db::queue_snapshot(&pkg.name, &pkg.version, &hash, pkgbuild_opt) {
+                        eprintln!("Note: Snapshot queuing failed (non-critical): {}", e);
+                    }
+                }
+            }
+        }
 
         // Check if package is already installed
         if resolver::is_installed(package)? {

@@ -5,7 +5,7 @@ use std::io::{self, IsTerminal, Write};
 use crate::{
     audit, cache, config,
     config::{CacheInterval, ConsentLevel},
-    diff, display, install, remove, resolver, trust, update, upgrade,
+    diff, display, install, remove, resolver, trust, trust_db, update, upgrade,
 };
 
 const TAGLINE: &str = "A package trust layer for Arch-based Linux";
@@ -19,7 +19,7 @@ fn cache_ref() -> Result<&'static cache::Cache> {
 #[derive(Debug, Parser)]
 #[command(
     name = "cpac",
-    version = concat!(env!("CARGO_PKG_VERSION"), " — A package trust layer for Arch-based Linux"),
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", "Sentinel", ") — ", "A package trust layer for Arch-based Linux"),
     about = format!("CPAC — {}", TAGLINE),
     long_about = format!(r#"
     ═════════════════════════════════════════════════════════════════
@@ -219,6 +219,9 @@ fn first_run_prompt() -> Result<()> {
     config::set_consent(consent)?;
     config::mark_first_run_done()?;
 
+    // Generate anonymous client token for future submissions
+    let _ = crate::trust_db::get_client_token();
+
     println!("  Crowdsourced submission set to: {}", consent);
     println!();
 
@@ -257,6 +260,7 @@ pub fn run() -> Result<()> {
             display::print_search_results(&results, all);
         }
         Commands::Trust { package } => {
+            let _ = trust_db::check_and_sync_if_stale();
             let Some(pkg) = resolver::resolve(cache_ref()?, &package)? else {
                 bail!(
                     "Package '{}' was not found in official repositories or the AUR",
@@ -267,6 +271,7 @@ pub fn run() -> Result<()> {
             display::print_trust_report(&pkg, &report);
         }
         Commands::Audit { package } => {
+            let _ = trust_db::check_and_sync_if_stale();
             if let Some(package) = package {
                 let Some((pkg, report)) = audit::audit_package(cache_ref()?, &package)? else {
                     bail!("Package '{}' is not installed", package);

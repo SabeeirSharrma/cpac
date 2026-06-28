@@ -103,7 +103,9 @@ pub fn search(cache: &Cache, query: &str) -> Result<Vec<PackageInfo>> {
 
     // Cache the results with a timestamp
     if let Ok(serialized) = serde_json::to_vec(&CachedEntry::new(&packages)) {
-        let _ = cache.insert_packages(&cache_key, serialized);
+        if let Err(e) = cache.insert_packages(&cache_key, serialized) {
+            eprintln!("Warning: Cache write failed (search): {}", e);
+        }
     }
 
     Ok(packages)
@@ -131,7 +133,9 @@ pub fn resolve(cache: &Cache, package: &str) -> Result<Option<PackageInfo>> {
 
     if let Some(pkg) = backends::pacman::info(package)? {
         if let Ok(serialized) = serde_json::to_vec(&CachedEntry::new(&pkg)) {
-            let _ = cache.insert_packages(&cache_key, serialized);
+            if let Err(e) = cache.insert_packages(&cache_key, serialized) {
+                eprintln!("Warning: Cache write failed (info): {}", e);
+            }
         }
         return Ok(Some(pkg));
     }
@@ -140,7 +144,9 @@ pub fn resolve(cache: &Cache, package: &str) -> Result<Option<PackageInfo>> {
         match backends::aur::info(package) {
             Ok(Some(pkg)) => {
                 if let Ok(serialized) = serde_json::to_vec(&CachedEntry::new(&pkg)) {
-                    let _ = cache.insert_packages(&cache_key, serialized);
+                    if let Err(e) = cache.insert_packages(&cache_key, serialized) {
+                        eprintln!("Warning: Cache write failed (info): {}", e);
+                    }
                 }
                 return Ok(Some(pkg));
             }
