@@ -8,6 +8,7 @@ use crate::{
 };
 
 const DEFAULT_MAX_RESULTS: usize = 25;
+const DEFAULT_MAX_AUDIT_WARNINGS: usize = 50;
 
 pub fn print_search_results(results: &[PackageInfo], show_all: bool) {
     if results.is_empty() {
@@ -206,12 +207,27 @@ pub fn print_system_audit(audit: &SystemAudit) {
         return;
     }
 
-    for warning in &audit.warnings {
+    let total = audit.warnings.len();
+    let limit = DEFAULT_MAX_AUDIT_WARNINGS;
+    let show_all = total <= limit;
+
+    for warning in audit.warnings.iter().take(limit) {
         println!(
             "    {:<24} [Trust: {} - {}]",
             warning.package_name.as_str().bold(),
             colored_warning_label(warning.score, &warning.tier),
             warning.reason
+        );
+    }
+
+    if !show_all {
+        println!(
+            "\n    {}",
+            format!(
+                "Showing {} of {} warnings. Run 'cpac audit <package>' for details on specific packages.",
+                limit, total
+            )
+            .dimmed()
         );
     }
     println!();

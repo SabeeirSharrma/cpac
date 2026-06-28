@@ -72,6 +72,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          body: |
+            ## Checksums Only
+
+            > **⚠ Do not download or use the binary artifacts below.**
+            > They are provided for SHA-256 checksum verification only.
+            > CPAC must be built from source. Use the [install script](https://thecinderproject.qd.je/cpac/install.sh) or build manually.
+
+            ${{ github.event.head_commit.message }}
           files: |
             cpac-x86_64-linux/cpac-x86_64-linux
             cpac-x86_64-linux/sha256sums.txt

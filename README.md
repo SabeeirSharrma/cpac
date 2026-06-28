@@ -66,7 +66,10 @@ Data is stored locally at `~/.cpac/trust-db/` for offline use.
 
 ## Releases
 
-Pre-built binaries are available for x86_64 and aarch64 Linux on [GitHub Releases](https://github.com/SabeeirSharrma/cpac/releases). Each release includes SHA-256 checksums.
+GitHub Releases include pre-built binaries for x86_64 and aarch64 Linux alongside SHA-256 checksums.
+
+> **⚠ These binaries are provided for checksum verification only — do not download or use them directly.**
+> CPAC must be built from source to ensure transparency and reproducibility. Use the [install script](https://thecinderproject.qd.je/cpac/install.sh) or build manually.
 
 ## Auto Cache Clearing
 

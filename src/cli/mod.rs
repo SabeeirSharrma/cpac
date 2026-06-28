@@ -44,6 +44,10 @@ struct Cli {
     /// Skip checking for CPAC updates on this run.
     #[arg(long, global = true)]
     no_check_updates: bool,
+
+    /// Disable colored output.
+    #[arg(long, global = true)]
+    no_color: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -235,13 +239,19 @@ fn auto_cache_clear() -> Result<()> {
 }
 
 pub fn run() -> Result<()> {
+    // Handle color control: --no-color flag or NO_COLOR env var
+    // (colored v2 does not auto-respect NO_COLOR)
+    let cli = Cli::parse();
+    let no_color = cli.no_color || std::env::var("NO_COLOR").is_ok();
+    if no_color {
+        colored::control::set_override(false);
+    }
+
     // First-run consent prompt (only shows once, only in interactive terminals)
     first_run_prompt()?;
 
     // Automatic cache clearing based on configured interval
     auto_cache_clear()?;
-
-    let cli = Cli::parse();
 
     let Some(command) = cli.command else {
         Cli::parse_from(["cpac", "--help"]);
@@ -263,8 +273,8 @@ pub fn run() -> Result<()> {
             let _ = trust_db::check_and_sync_if_stale();
             let Some(pkg) = resolver::resolve(cache_ref()?, &package)? else {
                 bail!(
-                    "Package '{}' was not found in official repositories or the AUR",
-                    package
+                    "Package '{}' not found. Try 'cpac search {}' to find the correct name.",
+                    package, package
                 );
             };
             let report = trust::analyze(cache_ref()?, &pkg);
@@ -274,7 +284,10 @@ pub fn run() -> Result<()> {
             let _ = trust_db::check_and_sync_if_stale();
             if let Some(package) = package {
                 let Some((pkg, report)) = audit::audit_package(cache_ref()?, &package)? else {
-                    bail!("Package '{}' is not installed", package);
+                    bail!(
+                        "Package '{}' is not installed. Run 'pacman -Qs {}' to check.",
+                        package, package
+                    );
                 };
                 display::print_trust_report(&pkg, &report);
             } else {

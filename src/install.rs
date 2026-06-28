@@ -20,14 +20,16 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
     // Resolve the package
     let Some(pkg) = resolver::resolve(cache, package)? else {
         bail!(
-            "Package '{}' not found in official repositories or AUR",
-            package
+            "Package '{}' not found. Try 'cpac search {}' to find the correct name.",
+            package, package
         );
     };
 
     // Check if AUR is enabled for AUR packages
     if matches!(pkg.source, PackageSource::Aur) && !crate::config::is_aur_enabled() {
-        bail!("AUR is disabled. Run 'cpac aur enable' to allow AUR packages.");
+        bail!(
+            "AUR is disabled. This is an AUR package. Run 'cpac config set aur on' to enable AUR support."
+        );
     }
 
     // Select backend
