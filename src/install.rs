@@ -55,15 +55,17 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
     if !force {
         let mut report = trust::analyze(cache, &pkg);
 
-        // Full pre-flight check against trust DB
-        if let Ok(Some(pkgbuild)) = fetch_pkgbuild_for_install(&pkg) {
-            let preflight = compare::preflight_check(&pkg.name, &pkg.version, &pkgbuild);
+        // Try to fetch PKGBUILD for pre-flight check and anomaly detection
+        let pkgbuild = fetch_pkgbuild_for_install(&pkg).ok().flatten();
+
+        if let Some(ref pkgbuild_text) = pkgbuild {
+            let preflight = compare::preflight_check(&pkg.name, &pkg.version, pkgbuild_text);
 
             // Show pre-flight report
             println!("{}", compare::format_report(&preflight));
 
             // Show Pass 2 anomaly detection
-            let anomalies = crate::sanitize::detect_anomalies(&pkgbuild);
+            let anomalies = crate::sanitize::detect_anomalies(pkgbuild_text);
             if !anomalies.is_empty() {
                 println!("{}", crate::sanitize::format_anomalies(&anomalies));
 
@@ -93,13 +95,12 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
                 report.recommendation = trust::recommendation(report.score).to_string();
             }
 
-            // Queue snapshot for batch submission on next cpac update
-            // Respect consent level: full = sanitized PKGBUILD, hash = hash only, none = skip
+            // Queue snapshot using pre-flight data (respects consent)
             if preflight.should_submit {
                 let consent = config::load().map(|c| c.consent).unwrap_or_default();
                 let pkgbuild_opt = match consent {
                     config::ConsentLevel::Full => {
-                        let sanitized = crate::sanitize::sanitize_pkgbuild(&pkgbuild);
+                        let sanitized = crate::sanitize::sanitize_pkgbuild(pkgbuild_text);
                         Some(sanitized.text)
                     }
                     _ => None, // Hash only (consent=Hash) or skip (consent=None)
@@ -114,13 +115,25 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
                     ));
                 }
             }
+        } else {
+            // No PKGBUILD available — still queue hash-only snapshot
+            let consent = config::load().map(|c| c.consent).unwrap_or_default();
+            if consent != config::ConsentLevel::None {
+                let hash = crate::sanitize::sha256_hash(&format!("{}-{}", pkg.name, pkg.version));
+                pending_snapshot = Some((
+                    pkg.name.clone(),
+                    pkg.version.clone(),
+                    hash,
+                    None, // no PKGBUILD content
+                ));
+            }
         }
 
         // For upgrades, check for PKGBUILD diff
         if resolver::is_installed(package)? {
-            if let Ok(Some(cached_pkgbuild)) = get_cached_pkgbuild(cache, package) {
-                if let Ok(Some(current_pkgbuild)) = fetch_pkgbuild_for_install(&pkg) {
-                    let diff = analyze_pkgbuild_diff(&cached_pkgbuild, &current_pkgbuild);
+            if let Some(ref current_pkgbuild) = pkgbuild {
+                if let Ok(Some(cached_pkgbuild)) = get_cached_pkgbuild(cache, package) {
+                    let diff = analyze_pkgbuild_diff(&cached_pkgbuild, current_pkgbuild);
                     if !diff.suspicious_patterns.is_empty() {
                         // Add diff signals to the report
                         let diff_signals = diff_to_signals(&diff);
@@ -154,17 +167,21 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
             if consent != config::ConsentLevel::Full {
                 let default_yes = matches!(consent, config::ConsentLevel::None | config::ConsentLevel::Hash);
                 if prompt::prompt_contribute_package(default_yes)? {
-                    if let Ok(Some(ref pkgbuild_text)) = fetch_pkgbuild_for_install(&pkg) {
-                        let hash = crate::sanitize::sha256_hash(pkgbuild_text);
-                        let pkgbuild_opt = if consent == config::ConsentLevel::Hash {
-                            let sanitized = crate::sanitize::sanitize_pkgbuild(pkgbuild_text);
-                            Some(sanitized.text)
-                        } else {
-                            None
-                        };
-                        if let Err(e) = trust_db::queue_snapshot(&pkg.name, &pkg.version, &hash, pkgbuild_opt) {
-                            eprintln!("Note: Snapshot queuing failed (non-critical): {}", e);
-                        }
+                    let hash = if let Some(ref pkgbuild_text) = pkgbuild {
+                        crate::sanitize::sha256_hash(pkgbuild_text)
+                    } else {
+                        crate::sanitize::sha256_hash(&format!("{}-{}", pkg.name, pkg.version))
+                    };
+                    let pkgbuild_opt = if consent == config::ConsentLevel::Hash {
+                        pkgbuild.as_ref().map(|pb| {
+                            let sanitized = crate::sanitize::sanitize_pkgbuild(pb);
+                            sanitized.text
+                        })
+                    } else {
+                        None
+                    };
+                    if let Err(e) = trust_db::queue_snapshot(&pkg.name, &pkg.version, &hash, pkgbuild_opt) {
+                        eprintln!("Note: Snapshot queuing failed (non-critical): {}", e);
                     }
                 }
             }
