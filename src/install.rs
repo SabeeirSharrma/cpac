@@ -98,12 +98,10 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
             // Queue snapshot using pre-flight data (respects consent)
             if preflight.should_submit {
                 let consent = config::load().map(|c| c.consent).unwrap_or_default();
-                let pkgbuild_opt = match consent {
-                    config::ConsentLevel::Full => {
-                        let sanitized = crate::sanitize::sanitize_pkgbuild(pkgbuild_text);
-                        Some(sanitized.text)
-                    }
-                    _ => None, // Hash only (consent=Hash) or skip (consent=None)
+                // Always include sanitized PKGBUILD — it's public info, helps the panels
+                let pkgbuild_opt = {
+                    let sanitized = crate::sanitize::sanitize_pkgbuild(pkgbuild_text);
+                    Some(sanitized.text)
                 };
 
                 if consent != config::ConsentLevel::None {
@@ -172,14 +170,11 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
                     } else {
                         crate::sanitize::sha256_hash(&format!("{}-{}", pkg.name, pkg.version))
                     };
-                    let pkgbuild_opt = if consent == config::ConsentLevel::Hash {
-                        pkgbuild.as_ref().map(|pb| {
-                            let sanitized = crate::sanitize::sanitize_pkgbuild(pb);
-                            sanitized.text
-                        })
-                    } else {
-                        None
-                    };
+                    // Always include sanitized PKGBUILD — user explicitly agreed to contribute
+                    let pkgbuild_opt = pkgbuild.as_ref().map(|pb| {
+                        let sanitized = crate::sanitize::sanitize_pkgbuild(pb);
+                        sanitized.text
+                    });
                     if let Err(e) = trust_db::queue_snapshot(&pkg.name, &pkg.version, &hash, pkgbuild_opt) {
                         eprintln!("Note: Snapshot queuing failed (non-critical): {}", e);
                     }
