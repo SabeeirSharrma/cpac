@@ -63,18 +63,12 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
     let mut signals = Vec::new();
     let mut total: i32 = 0;
 
-    // Track which signals have unknown metadata vs actual negative evidence
-    let mut age_unknown = false;
-    let mut maintainer_unknown = false;
-    let mut pop_unknown = false;
-    let mut recency_unknown = false;
-
     // --- Signal 1: Repository Source (max +30) ---
     let source_points = match &pkg.source {
         PackageSource::Official { .. } => 30,
-        PackageSource::ThirdParty => 15,
-        PackageSource::Aur => 10,
-        PackageSource::Unknown => 0,
+        PackageSource::ThirdParty => 10,
+        PackageSource::Aur => 5,
+        PackageSource::Unknown => -5,
     };
     let source_detail = match &pkg.source {
         PackageSource::Official { repo } => format!("Official repository ({})", repo),
@@ -110,15 +104,14 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         });
         pts
     } else {
-        // No age data available — neutral, zero contribution
-        age_unknown = true;
+        // No age data — penalty for missing provenance
         signals.push(TrustSignal {
             name: "Package Age".to_string(),
-            points: 0,
+            points: -2,
             max_points: 15,
-            detail: "Metadata unavailable — no penalty".to_string(),
+            detail: "Metadata unavailable — unknown provenance".to_string(),
         });
-        0
+        -2
     };
     total += age_points;
 
@@ -126,11 +119,11 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
     let maintainer_points = if pkg.orphan {
         signals.push(TrustSignal {
             name: "Maintainer".to_string(),
-            points: -5,
+            points: -10,
             max_points: 15,
             detail: "Orphaned — no active maintainer".to_string(),
         });
-        -5
+        -10
     } else if let Some(ref maintainer) = pkg.maintainer {
         let pts =
             if maintainer.contains('@') || matches!(&pkg.source, PackageSource::Official { .. }) {
@@ -147,15 +140,14 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         });
         pts
     } else {
-        // No maintainer info available — neutral, zero contribution
-        maintainer_unknown = true;
+        // No maintainer info — penalty for unknown custody
         signals.push(TrustSignal {
             name: "Maintainer".to_string(),
-            points: 0,
+            points: -3,
             max_points: 15,
-            detail: "Metadata unavailable — no penalty".to_string(),
+            detail: "Metadata unavailable — unknown custodian".to_string(),
         });
-        0
+        -3
     };
     total += maintainer_points;
 
@@ -177,15 +169,14 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         });
         pts
     } else {
-        // No popularity data — neutral, zero contribution
-        pop_unknown = true;
+        // No popularity data — penalty for unknown adoption
         signals.push(TrustSignal {
             name: "Popularity".to_string(),
-            points: 0,
+            points: -2,
             max_points: 15,
-            detail: "Metadata unavailable — no penalty".to_string(),
+            detail: "Metadata unavailable — unknown adoption".to_string(),
         });
-        0
+        -2
     };
     total += pop_points;
 
@@ -209,15 +200,14 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         });
         pts
     } else {
-        // No recency data — neutral, zero contribution
-        recency_unknown = true;
+        // No recency data — penalty for unknown maintenance status
         signals.push(TrustSignal {
             name: "Last Updated".to_string(),
-            points: 0,
+            points: -2,
             max_points: 15,
-            detail: "Metadata unavailable — no penalty".to_string(),
+            detail: "Metadata unavailable — unknown maintenance status".to_string(),
         });
-        0
+        -2
     };
     total += recency_points;
 
@@ -249,33 +239,11 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         advisory_floor = Some(crate::trust_db::advisory_floor(&advisory));
     }
 
-    // Count unknown vs negative signals
-    let unknown_count = [
-        age_unknown,
-        maintainer_unknown,
-        pop_unknown,
-        recency_unknown,
-    ]
-    .iter()
-    .filter(|&&x| x)
-    .count();
-
-    let negative_signals = signals.iter().filter(|s| s.points < 0).count();
-
     // Clamp to 0..100
     let score = total.clamp(0, 100) as u32;
 
     // Compute base recommendation
-    let mut recommendation = if negative_signals == 0 && unknown_count > 0 {
-        // No actual negative signals, only missing metadata - don't go below Moderate
-        match score {
-            60..=100 => "Safe",
-            40..=59 => "Moderate",
-            _ => "Moderate", // Floor at Moderate when only missing metadata
-        }
-    } else {
-        recommendation(score)
-    }.to_string();
+    let mut recommendation = recommendation(score).to_string();
 
     // Enforce advisory floor: advisory status can only raise the recommendation, never lower it
     if let Some(floor) = advisory_floor {
@@ -633,30 +601,19 @@ mod tests {
 
     #[test]
     fn all_signals_unknown_zero_negative_signals_floors_at_moderate() {
-        // Test case for ThirdParty package with all metadata unavailable but no negative signals
+        // Test case for ThirdParty package with all metadata unavailable
         let pkg = make_third_party_pkg("test-package");
         let cache = test_cache();
         let report = analyze(cache, &pkg);
 
-        // Score should be: 15 (ThirdParty) + 0 + 0 + 0 + 0 = 15
-        // With floor at Moderate when only missing metadata
-        assert_eq!(report.recommendation, "Moderate");
-        assert_eq!(report.score, 15);
+        // Score: 10 (ThirdParty) + -2 (age) + -3 (maintainer) + -2 (pop) + -2 (recency) = 1
+        // Missing metadata now properly penalizes the score
+        assert_eq!(report.recommendation, "Danger");
+        assert_eq!(report.score, 1);
 
-        // Verify no negative signals
+        // Verify negative signals exist (from missing metadata)
         let negative_signals = report.signals.iter().filter(|s| s.points < 0).count();
-        assert_eq!(negative_signals, 0, "Should have no negative signals");
-
-        // Verify unknown metadata signals are marked correctly
-        let unknown_signals = report
-            .signals
-            .iter()
-            .filter(|s| s.detail == "Metadata unavailable — no penalty")
-            .count();
-        assert_eq!(
-            unknown_signals, 4,
-            "Should have 4 signals with 'Metadata unavailable — no penalty'"
-        );
+        assert_eq!(negative_signals, 4, "Should have 4 negative signals from missing metadata");
     }
 
     #[test]
@@ -672,10 +629,10 @@ mod tests {
         let cache = test_cache();
         let report = analyze(cache, &pkg);
 
-        // Score: 30 (Official) + 0 (age unknown) + 13 (maintainer) + 0 (pop unknown) + 0 (recency unknown) = 43
-        // With missing metadata floor (unknown_count > 0, no negative signals), floors at "Moderate"
-        assert_eq!(report.recommendation, "Moderate");
-        assert_eq!(report.score, 43);
+        // Score: 30 (Official) + -2 (age unknown) + 13 (maintainer) + -2 (pop unknown) + -2 (recency unknown) = 37
+        // No more "floor at Moderate" — unknown metadata properly penalizes
+        assert_eq!(report.recommendation, "Warning");
+        assert_eq!(report.score, 37);
     }
 
     #[test]

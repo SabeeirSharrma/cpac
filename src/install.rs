@@ -59,7 +59,7 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
         let pkgbuild = fetch_pkgbuild_for_install(&pkg).ok().flatten();
 
         if let Some(ref pkgbuild_text) = pkgbuild {
-            let preflight = compare::preflight_check(&pkg.name, &pkg.version, pkgbuild_text);
+            let preflight = compare::preflight_check(&pkg.name, &pkg.version, pkgbuild_text, &pkg.source);
 
             // Show pre-flight report
             println!("{}", compare::format_report(&preflight));

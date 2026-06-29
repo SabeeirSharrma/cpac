@@ -1,39 +1,74 @@
-# CPAC v0.9.2 — Patch: Self-Updater + Official PKGBUILD Fetching
+# CPAC v0.9.4 — Hardened Trust Scoring
 
 ## Overview
 
-Patch release adding automatic temporary Rust toolchain installation to the self-updater, and fetching PKGBUILDs for official Arch packages from Arch GitLab for trust DB submission.
+Major scoring overhaul making the trust system stricter and more security-focused. Unknown metadata now penalizes scores, AUR packages scored more conservatively, outdated penalty is source-aware, and submission logic prevents duplicates.
 
 ---
 
 ## Changes
 
-### Self-Updater — Temporary Rust Toolchain
+### Stricter Source Scoring
 
-`cpac upgrade` now installs a temporary Rust toolchain if `cargo` is not found:
+| Source | Before | After |
+|--------|--------|-------|
+| Official | +30 | +30 (unchanged) |
+| ThirdParty | +15 | +10 |
+| AUR | +10 | +5 |
+| Unknown | 0 | -5 |
 
-- **Auto-detect**: checks for `cargo` before building
-- **Install**: uses `pacman -S rustup` on Arch, falls back to `rustup.rs` installer
-- **Cleanup**: removes temporary Rust toolchain after build (via Drop guard)
-- **Error-safe**: cleanup happens on success, failure, or cancellation
+AUR packages are community-maintained and carry more risk. Unknown sources are actively penalized.
+
+### Unknown Metadata Now Penalizes
+
+Previously, missing metadata scored 0 (neutral). Now it penalizes:
+
+| Signal | Penalty | Detail |
+|--------|---------|--------|
+| Age unknown | -2 | Unknown provenance |
+| Maintainer unknown | -3 | Unknown custodian |
+| Popularity unknown | -2 | Unknown adoption |
+| Last Updated unknown | -2 | Unknown maintenance status |
+
+### Orphaned Package Penalty Strengthened
+
+-5 → **-10**. An orphaned package has no active maintainer to respond to security issues.
+
+### Outdated Penalty is Source-Aware
+
+The -5 outdated penalty now only applies to AUR/third-party packages. Official packages are not penalized for having newer community versions in the trust DB (they use upstream versioning).
+
+### Submission Deduplication
+
+Snapshot submission now checks three conditions before queueing:
+1. Version already in DB → skip
+2. PKGBUILD hash matches latest → skip
+3. Hash already well-known (10+ submissions) → skip
 
 ### Official Package PKGBUILD Fetching
 
-`fetch_pkgbuild_for_package()` now fetches PKGBUILDs for official Arch packages from `gitlab.archlinux.org`:
+CPAC now fetches PKGBUILDs for official packages from `gitlab.archlinux.org`, enabling trust DB submission for all packages.
 
-- **URL pattern**: `https://gitlab.archlinux.org/archlinux/packaging/packages/<pkg>/-/raw/main/PKGBUILD`
-- **10-second timeout** per request
-- **Graceful fallback**: returns `None` if fetch fails (no error shown)
-- **Enables trust DB submission** for official packages (previously skipped)
+### Self-Updater Temp Rust
 
-### Progress Messages
-
-- `Sanitizing PKGBUILD and queuing snapshot...` shown when PKGBUILD is being prepared
-- `Snapshot queued for submission on next 'cpac update'.` shown after queueing
-
-**Files**: `src/upgrade.rs`, `src/resolver/mod.rs`, `src/install.rs`
+`cpac upgrade` installs temporary Rust if not present, cleans up after build.
 
 ---
+
+## Files Changed (v0.9.4)
+
+- `src/trust/mod.rs` — stricter source scores, unknown metadata penalties, orphaned -10
+- `src/compare.rs` — source-aware outdated penalty, version dedup check, source param
+- `src/install.rs` — pass source to preflight_check, decouple snapshot from PKGBUILD fetch
+- `src/resolver/mod.rs` — official PKGBUILD fetching from Arch GitLab
+- `src/upgrade.rs` — temporary Rust toolchain, Drop guard cleanup
+- `Cargo.toml` — version bump to 0.9.4
+
+---
+
+# CPAC v0.9.2 — Patch: Self-Updater + Official PKGBUILD Fetching
+
+_(see previous entry)_
 
 # CPAC v0.9.1 — Patch: Direct Worker URL + Brand Fix
 

@@ -99,6 +99,7 @@ pub fn preflight_check(
     package: &str,
     version: &str,
     pkgbuild_content: &str,
+    source: &crate::backends::PackageSource,
 ) -> PreFlightReport {
     let hash = crate::sanitize::sha256_hash(pkgbuild_content);
 
@@ -172,11 +173,17 @@ pub fn preflight_check(
         &advisory,
         package,
         version,
+        source,
     );
 
     // ── Should submit? ──
+    // Don't submit if this version already has snapshots (someone else contributed it)
+    let version_has_snapshots = !version_snapshots.is_empty();
+    // Don't submit if hash matches the latest known PKGBUILD for this package (no change)
+    let matches_latest = matches_consensus;
     // Don't submit if hash is already well-known (>10 submissions)
-    let should_submit = !hash_known || hash_submissions < 10;
+    let hash_well_known = hash_known && hash_submissions >= 10;
+    let should_submit = !version_has_snapshots && !matches_latest && !hash_well_known;
 
     PreFlightReport {
         package: package.to_string(),
@@ -248,6 +255,7 @@ fn compute_verdict(
     advisory: &Option<Advisory>,
     package: &str,
     version: &str,
+    source: &crate::backends::PackageSource,
 ) -> (Verdict, i32, String) {
     let mut concerns = Vec::new();
     let mut adjustments = Vec::new();
@@ -287,8 +295,9 @@ fn compute_verdict(
         }
     }
 
-    // Version check
-    if is_outdated {
+    // Version outdated check — only penalize for AUR/third-party packages
+    // Official packages should not be penalized for having newer community versions in DB
+    if is_outdated && !matches!(source, crate::backends::PackageSource::Official { .. }) {
         adjustments.push(-5);
         concerns.push("Newer version is known in the trust DB".to_string());
     }
@@ -296,7 +305,8 @@ fn compute_verdict(
     // Determine verdict
     let advisory_concern = version_affected;
     let consensus_concern = total_submissions > 0 && !matches_consensus;
-    let outdated_concern = is_outdated;
+    // Only flag as outdated for non-official packages (official packages use upstream versioning)
+    let outdated_concern = is_outdated && !matches!(source, crate::backends::PackageSource::Official { .. });
 
     let verdict = match (
         advisory_concern,
@@ -470,7 +480,7 @@ mod tests {
 
     #[test]
     fn unknown_package_gets_unknown_verdict() {
-        let report = preflight_check("nonexistent-pkg", "1.0.0-1", "some pkgbuild content");
+        let report = preflight_check("nonexistent-pkg", "1.0.0-1", "some pkgbuild content", &crate::backends::PackageSource::Unknown);
         assert_eq!(report.verdict, Verdict::Unknown);
         assert!(!report.hash_known);
         assert!(report.should_submit);
