@@ -40,35 +40,22 @@ cpac update [--aur]              # refresh official + AUR databases
 cpac diff <package>              # local PKGBUILD diff
 cpac config show                 # show current configuration
 cpac config set aur on|off       # enable/disable AUR
-cpac config set consent ...      # set data sharing level
 cpac config set cache ...        # set auto-clear interval
 cpac config reset                # reset to defaults
 cpac config path                 # show config file location
 cpac clear-cache                 # manually clear cache
+cpac upgrade                     # self-update from GitHub
 ```
 
 ## AUR Helpers
 
 Paru is the preferred AUR helper, but yay is also supported. CPAC works with either — it detects what's installed and uses it for AUR operations.
 
-## First Run
-
-On first launch, CPAC asks about crowdsourced data sharing (opt-in, anonymous). This can be changed anytime via `cpac config set consent`.
-
-## Trust DB Integration
-
-CPAC connects to the cpac-trust-db backend via a Cloudflare Worker proxy at `api.thecinderproject.qd.je` for real-time trust data:
-- **Advisory warnings** — color-coded alerts when installing known-malicious packages
-- **Snapshot submissions** — anonymized PKGBUILD data shared with the community (consent-aware)
-- **Auto-sync** — trust data refreshes automatically when stale
-
-Data is stored locally at `~/.cpac/trust-db/` for offline use.
-
 ## Releases
 
 GitHub Releases include pre-built binaries for x86_64 and aarch64 Linux alongside SHA-256 checksums.
 
-> **⚠ These binaries are provided for checksum verification only — do not download or use them directly.**
+> **These binaries are provided for checksum verification only — do not download or use them directly.**
 > CPAC must be built from source to ensure transparency and reproducibility. Use the [install script](https://thecinderproject.qd.je/cpac/install.sh) or build manually.
 
 ## Auto Cache Clearing
@@ -79,24 +66,22 @@ CPAC automatically clears its metadata cache on a configurable interval (daily/w
 
 - Arch-based Linux distribution
 - `pacman` available on `PATH`
-- Network access for AUR search and trust DB sync
+- Network access for AUR search (optional, can be disabled)
 
 ## Trust Scoring
 
-The trust algorithm uses metadata available from official repositories and the AUR, plus real-time trust DB data:
+CPAC v1 uses **local signals only** — no network dependency for trust analysis:
 
-- repository source
-- package age
-- maintainer status
-- votes/popularity
-- update recency
-- out-of-date and orphan status
-- PKGBUILD diff results
-- **advisory warnings** (known malicious/compromised packages)
-- **snapshot divergence** (hash comparison with crowdsourced data)
-- **anomaly detection** (suspicious PKGBUILD patterns including npm/bun pipe-to-shell)
+- **Repository source** — Official (+30), ThirdParty (+10), AUR (+5), Unknown (-5)
+- **Package age** — older packages score higher
+- **Maintainer status** — active maintainer (+10-13), orphaned (-10), unknown (-3)
+- **Popularity** — vote count mapped to trust score
+- **Update recency** — recently updated packages score higher
+- **Out-of-date flag** — flagged packages penalized (-10)
+- **PKGBUILD diffing** — detects suspicious changes on upgrade (local, no network)
+- **Anomaly detection** — catches curl|sh, base64 decode, eval/exec, rm -rf, npm/bun pipe-to-shell
 
-When a package has no data in the trust DB, local scoring still runs normally. Missing DB data is shown as neutral signals (+0), not penalties.
+> Note: Community trust data (cpac-trust-db) is not yet available in this release. When available, it will be an opt-in feature.
 
 See [docs/trust-algorithm.md](docs/trust-algorithm.md) for details.
 
