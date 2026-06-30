@@ -5,10 +5,12 @@ use std::io::{self, IsTerminal, Write};
 
 use crate::{
     audit, cache, config,
-    backends::PackageInfo,
-    config::{CacheInterval, ConsentLevel},
-    diff, display, install, remove, resolver, trust, trust_db, update, upgrade,
+    config::CacheInterval,
+    diff, display, install, remove, resolver, trust, update, upgrade,
 };
+
+#[cfg(feature = "trust-db")]
+use crate::{backends::PackageInfo, trust_db};
 
 const TAGLINE: &str = "A package trust layer for Arch-based Linux";
 
@@ -156,17 +158,6 @@ enum SetCommand {
         value: OnOff,
     },
 
-    /// Set crowdsourced data sharing level.
-    ///
-    /// Examples:
-    ///   cpac config set consent none
-    ///   cpac config set consent hash
-    ///   cpac config set consent full
-    Consent {
-        /// "none", "hash", or "full".
-        value: ConsentLevel,
-    },
-
     /// Set automatic cache clearing interval.
     ///
     /// Examples:
@@ -183,55 +174,6 @@ enum SetCommand {
 enum OnOff {
     On,
     Off,
-}
-
-/// Show the first-run consent prompt for crowdsourced data sharing.
-fn first_run_prompt() -> Result<()> {
-    if config::is_first_run_done() {
-        return Ok(());
-    }
-
-    // Only prompt in interactive terminals
-    if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
-        return Ok(());
-    }
-
-    println!();
-    println!("  Welcome to CPAC!");
-    println!("  Before you get started, we need to know about your privacy preferences.");
-    println!();
-    println!("  CPAC can compare packages against anonymized data from other users");
-    println!("  to help detect tampered PKGBUILDs. Participation is completely optional.");
-    println!();
-    println!("  [1] No, don't submit anything");
-    println!("  [2] Yes, hash/signature only  (default)");
-    println!("  [3] Yes, full PKGBUILD");
-    println!();
-
-    print!("  Choice (Default: 2): ");
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    let bytes_read = io::stdin().read_line(&mut input)?;
-
-    let trimmed = input.trim();
-    let consent = if trimmed.is_empty() || bytes_read == 0 {
-        ConsentLevel::default()
-    } else {
-        let choice: u8 = trimmed.parse().unwrap_or(2);
-        ConsentLevel::from_number(choice).unwrap_or_default()
-    };
-
-    config::set_consent(consent)?;
-    config::mark_first_run_done()?;
-
-    // Generate anonymous client token for future submissions
-    let _ = crate::trust_db::get_client_token();
-
-    println!("  Crowdsourced submission set to: {}", consent);
-    println!();
-
-    Ok(())
 }
 
 /// Check and handle legacy/removed commands with helpful migration messages.
@@ -286,9 +228,6 @@ pub fn run() -> Result<()> {
         colored::control::set_override(false);
     }
 
-    // First-run consent prompt (only shows once, only in interactive terminals)
-    first_run_prompt()?;
-
     // Automatic cache clearing based on configured interval
     auto_cache_clear()?;
 
@@ -309,49 +248,59 @@ pub fn run() -> Result<()> {
             display::print_search_results(&results, all);
         }
         Commands::Trust { package } => {
+            #[cfg(feature = "trust-db")]
             let _ = trust_db::check_and_sync_if_stale();
             if let Some(pkg) = resolver::resolve(cache_ref()?, &package)? {
                 let report = trust::analyze(cache_ref()?, &pkg);
                 display::print_trust_report(&pkg, &report);
             } else {
-                // Package not in any synced repo — check trust DB directly
-                match trust_db::lookup_advisory(&package) {
-                    Ok(Some(advisory)) => {
-                        use crate::backends::PackageSource;
-                        let pkg = PackageInfo {
-                            name: advisory.package.clone(),
-                            version: "unknown".to_string(),
-                            description: advisory.summary.clone(),
-                            source: PackageSource::Unknown,
-                            maintainer: Some(advisory.reported_by.clone()),
-                            votes: None,
-                            popularity: None,
-                            first_submitted: None,
-                            last_modified: None,
-                            out_of_date: false,
-                            orphan: false,
-                            url: None,
-                            licenses: vec![],
-                            depends: vec![],
-                            install_size: None,
-                        };
-                        let report = trust::analyze(cache_ref()?, &pkg);
-                        display::print_trust_report(&pkg, &report);
-                        println!(
-                            "  Note: '{}' is not in any synced repository. Trust data comes from the trust DB only.",
-                            package
-                        );
-                    }
-                    _ => {
-                        bail!(
-                            "Package '{}' not found in any repository or trust database. Try 'cpac search {}' to find the correct name.",
-                            package, package
-                        );
+                #[cfg(feature = "trust-db")]
+                {
+                    // Package not in any synced repo — check trust DB directly
+                    match trust_db::lookup_advisory(&package) {
+                        Ok(Some(advisory)) => {
+                            use crate::backends::PackageSource;
+                            let pkg = PackageInfo {
+                                name: advisory.package.clone(),
+                                version: "unknown".to_string(),
+                                description: advisory.summary.clone(),
+                                source: PackageSource::Unknown,
+                                maintainer: Some(advisory.reported_by.clone()),
+                                votes: None,
+                                popularity: None,
+                                first_submitted: None,
+                                last_modified: None,
+                                out_of_date: false,
+                                orphan: false,
+                                url: None,
+                                licenses: vec![],
+                                depends: vec![],
+                                install_size: None,
+                            };
+                            let report = trust::analyze(cache_ref()?, &pkg);
+                            display::print_trust_report(&pkg, &report);
+                            println!(
+                                "  Note: '{}' is not in any synced repository. Trust data comes from the trust DB only.",
+                                package
+                            );
+                        }
+                        _ => {
+                            bail!(
+                                "Package '{}' not found in any repository or trust database. Try 'cpac search {}' to find the correct name.",
+                                package, package
+                            );
+                        }
                     }
                 }
+                #[cfg(not(feature = "trust-db"))]
+                bail!(
+                    "Package '{}' not found in any repository. Try 'cpac search {}' to find the correct name.",
+                    package, package
+                );
             }
         }
         Commands::Audit { package } => {
+            #[cfg(feature = "trust-db")]
             let _ = trust_db::check_and_sync_if_stale();
             if let Some(package) = package {
                 let Some((pkg, report)) = audit::audit_package(cache_ref()?, &package)? else {
@@ -452,7 +401,6 @@ fn config_show() -> Result<()> {
     println!("Current configuration:");
     println!();
     println!("  AUR support:           {}", if cfg.aur_enabled { "on" } else { "off" });
-    println!("  Crowdsourced data:     {}", cfg.consent);
     println!("  Auto-clear cache:      {}", cfg.cache_interval);
     println!("  Config file:           {}", config::path()?.display());
 
@@ -465,10 +413,6 @@ fn config_set(cmd: SetCommand) -> Result<()> {
             let enabled = matches!(value, OnOff::On);
             config::set_aur_enabled(enabled)?;
             println!("AUR support {}.", if enabled { "enabled" } else { "disabled" });
-        }
-        SetCommand::Consent { value } => {
-            config::set_consent(value)?;
-            println!("Crowdsourced data set to: {}", value);
         }
         SetCommand::Cache { value } => {
             config::set_cache_interval(value)?;
@@ -484,7 +428,6 @@ fn config_reset() -> Result<()> {
     println!("Configuration reset to defaults.");
     println!();
     println!("  AUR support:           {}", if default.aur_enabled { "on" } else { "off" });
-    println!("  Crowdsourced data:     {}", default.consent);
     println!("  Auto-clear cache:      {}", default.cache_interval);
 
     Ok(())

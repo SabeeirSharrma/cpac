@@ -139,6 +139,20 @@ pub fn print_trust_report(pkg: &PackageInfo, report: &TrustReport) {
     );
     println!("  {}", colorize_str(box_border, score_color));
 
+    // Local signals only note (when trust-db feature is disabled)
+    #[cfg(not(feature = "trust-db"))]
+    {
+        println!();
+        println!(
+            "  {}",
+            "Note: This trust score is based on local signals only.".dimmed()
+        );
+        println!(
+            "  {}",
+            "Community trust data (cpac-trust-db) is not yet available in this release.".dimmed()
+        );
+    }
+
     // --- Signal Breakdown ---
     println!();
     println!("  {}", "Signals".cyan().bold());

@@ -6,6 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(feature = "trust-db")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "snake_case")]
 #[value(rename_all = "kebab-case")]
@@ -19,6 +20,7 @@ pub enum ConsentLevel {
     Full,
 }
 
+#[cfg(feature = "trust-db")]
 impl ConsentLevel {
     pub fn label(self) -> &'static str {
         match self {
@@ -28,6 +30,7 @@ impl ConsentLevel {
         }
     }
 
+    #[allow(dead_code)]
     pub fn from_number(n: u8) -> Option<Self> {
         match n {
             1 => Some(Self::None),
@@ -38,6 +41,7 @@ impl ConsentLevel {
     }
 }
 
+#[cfg(feature = "trust-db")]
 impl fmt::Display for ConsentLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.label())
@@ -83,6 +87,7 @@ impl fmt::Display for CacheInterval {
 pub struct Config {
     #[serde(default = "default_aur_enabled")]
     pub aur_enabled: bool,
+    #[cfg(feature = "trust-db")]
     #[serde(default)]
     pub consent: ConsentLevel,
     #[serde(default)]
@@ -105,6 +110,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             aur_enabled: default_aur_enabled(),
+            #[cfg(feature = "trust-db")]
             consent: ConsentLevel::default(),
             cache_interval: CacheInterval::default(),
             last_cache_clear: 0,
@@ -156,6 +162,8 @@ pub fn is_aur_enabled() -> bool {
     load().map(|c| c.aur_enabled).unwrap_or(false)
 }
 
+#[cfg(feature = "trust-db")]
+#[allow(dead_code)]
 pub fn set_consent(consent: ConsentLevel) -> Result<()> {
     let mut config = load().unwrap_or_default();
     config.consent = consent;
@@ -191,6 +199,8 @@ pub fn maybe_clear_cache() -> Result<bool> {
 }
 
 /// Mark the first-run consent prompt as completed.
+#[cfg(feature = "trust-db")]
+#[allow(dead_code)]
 pub fn mark_first_run_done() -> Result<()> {
     let mut config = load().unwrap_or_default();
     config.first_run_done = true;
@@ -198,6 +208,8 @@ pub fn mark_first_run_done() -> Result<()> {
 }
 
 /// Returns true if the first-run consent prompt has been shown.
+#[cfg(feature = "trust-db")]
+#[allow(dead_code)]
 pub fn is_first_run_done() -> bool {
     load().map(|c| c.first_run_done).unwrap_or(false)
 }

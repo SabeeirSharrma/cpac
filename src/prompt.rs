@@ -23,6 +23,7 @@ pub fn prompt_confirmation() -> Result<bool> {
 /// Prompt for one-time contribution of an unknown package.
 /// default_yes: true when consent is None or Hash (opt-in default).
 /// Returns true if user agrees.
+#[cfg(feature = "trust-db")]
 pub fn prompt_contribute_package(default_yes: bool) -> Result<bool> {
     let hint = if default_yes { "Y/n" } else { "y/N" };
     print!(

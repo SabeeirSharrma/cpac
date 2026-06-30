@@ -4,17 +4,18 @@ use crate::{
     backends::install::{ensure_sudo, install_package, select_backend, update_databases},
     backends::{PackageInfo, PackageSource},
     cache::Cache,
-    compare,
-    config,
     prompt,
     resolver,
     trust::{self, analyze_pkgbuild_diff, cache_pkgbuild, diff_to_signals, get_cached_pkgbuild},
-    trust_db,
 };
+
+#[cfg(feature = "trust-db")]
+use crate::{compare, config, trust_db};
 
 /// Run the install command.
 pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<()> {
     // Auto-sync trust database if stale
+    #[cfg(feature = "trust-db")]
     let _ = trust_db::check_and_sync_if_stale();
 
     // Resolve the package
@@ -51,6 +52,7 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
     }
 
     // Show trust analysis (unless forced)
+    #[cfg(feature = "trust-db")]
     let mut pending_snapshot: Option<(String, String, String, Option<String>)> = None; // (package, version, hash, pkgbuild_text)
     if !force {
         let mut report = trust::analyze(cache, &pkg);
@@ -59,9 +61,11 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
         let pkgbuild = fetch_pkgbuild_for_install(&pkg).ok().flatten();
 
         if let Some(ref pkgbuild_text) = pkgbuild {
+            #[cfg(feature = "trust-db")]
             let preflight = compare::preflight_check(&pkg.name, &pkg.version, pkgbuild_text, &pkg.source);
 
             // Show pre-flight report
+            #[cfg(feature = "trust-db")]
             println!("{}", compare::format_report(&preflight));
 
             // Show Pass 2 anomaly detection
@@ -82,7 +86,8 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
                 report.recommendation = trust::recommendation(report.score).to_string();
             }
 
-            // Apply score adjustment from pre-flight
+            // Apply score adjustment from pre-flight (trust-db only)
+            #[cfg(feature = "trust-db")]
             if preflight.score_adjustment != 0 {
                 report.signals.push(trust::TrustSignal {
                     name: "Trust DB".to_string(),
@@ -95,7 +100,8 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
                 report.recommendation = trust::recommendation(report.score).to_string();
             }
 
-            // Queue snapshot using pre-flight data (respects consent)
+            // Queue snapshot using pre-flight data (trust-db only)
+            #[cfg(feature = "trust-db")]
             if preflight.should_submit {
                 let consent = config::load().map(|c| c.consent).unwrap_or_default();
                 // Always include sanitized PKGBUILD — it's public info, helps the panels
@@ -114,16 +120,19 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
                 }
             }
         } else {
-            // No PKGBUILD available — still queue hash-only snapshot
-            let consent = config::load().map(|c| c.consent).unwrap_or_default();
-            if consent != config::ConsentLevel::None {
-                let hash = crate::sanitize::sha256_hash(&format!("{}-{}", pkg.name, pkg.version));
-                pending_snapshot = Some((
-                    pkg.name.clone(),
-                    pkg.version.clone(),
-                    hash,
-                    None, // no PKGBUILD content
-                ));
+            // No PKGBUILD available — still queue hash-only snapshot (trust-db only)
+            #[cfg(feature = "trust-db")]
+            {
+                let consent = config::load().map(|c| c.consent).unwrap_or_default();
+                if consent != config::ConsentLevel::None {
+                    let hash = crate::sanitize::sha256_hash(&format!("{}-{}", pkg.name, pkg.version));
+                    pending_snapshot = Some((
+                        pkg.name.clone(),
+                        pkg.version.clone(),
+                        hash,
+                        None, // no PKGBUILD content
+                    ));
+                }
             }
         }
 
@@ -148,35 +157,38 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
         // Display trust report
         crate::display::print_trust_report(&pkg, &report);
 
-        // Check if package is unknown to the trust DB (no advisory, no snapshots)
-        let has_db_data = trust_db::lookup_advisory(&pkg.name)
-            .ok()
-            .flatten()
-            .is_some()
-            || trust_db::lookup_snapshots(&pkg.name)
-                .map(|s| !s.is_empty())
-                .unwrap_or(false);
+        // Trust-db contribution prompt (trust-db only)
+        #[cfg(feature = "trust-db")]
+        {
+            let has_db_data = trust_db::lookup_advisory(&pkg.name)
+                .ok()
+                .flatten()
+                .is_some()
+                || trust_db::lookup_snapshots(&pkg.name)
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false);
 
-        if !has_db_data {
-            println!("\n  Trust score based on local signals only.");
-            println!("  We do not have data on this package in the CPAC Trust DB.");
-            // Ask for contribution if consent is not Full (Full already auto-queues)
-            let consent = config::load().map(|c| c.consent).unwrap_or_default();
-            if consent != config::ConsentLevel::Full {
-                let default_yes = matches!(consent, config::ConsentLevel::None | config::ConsentLevel::Hash);
-                if prompt::prompt_contribute_package(default_yes)? {
-                    let hash = if let Some(ref pkgbuild_text) = pkgbuild {
-                        crate::sanitize::sha256_hash(pkgbuild_text)
-                    } else {
-                        crate::sanitize::sha256_hash(&format!("{}-{}", pkg.name, pkg.version))
-                    };
-                    // Always include sanitized PKGBUILD — user explicitly agreed to contribute
-                    let pkgbuild_opt = pkgbuild.as_ref().map(|pb| {
-                        let sanitized = crate::sanitize::sanitize_pkgbuild(pb);
-                        sanitized.text
-                    });
-                    if let Err(e) = trust_db::queue_snapshot(&pkg.name, &pkg.version, &hash, pkgbuild_opt) {
-                        eprintln!("Note: Snapshot queuing failed (non-critical): {}", e);
+            if !has_db_data {
+                println!("\n  Trust score based on local signals only.");
+                println!("  We do not have data on this package in the CPAC Trust DB.");
+                // Ask for contribution if consent is not Full (Full already auto-queues)
+                let consent = config::load().map(|c| c.consent).unwrap_or_default();
+                if consent != config::ConsentLevel::Full {
+                    let default_yes = matches!(consent, config::ConsentLevel::None | config::ConsentLevel::Hash);
+                    if prompt::prompt_contribute_package(default_yes)? {
+                        let hash = if let Some(ref pkgbuild_text) = pkgbuild {
+                            crate::sanitize::sha256_hash(pkgbuild_text)
+                        } else {
+                            crate::sanitize::sha256_hash(&format!("{}-{}", pkg.name, pkg.version))
+                        };
+                        // Always include sanitized PKGBUILD — user explicitly agreed to contribute
+                        let pkgbuild_opt = pkgbuild.as_ref().map(|pb| {
+                            let sanitized = crate::sanitize::sanitize_pkgbuild(pb);
+                            sanitized.text
+                        });
+                        if let Err(e) = trust_db::queue_snapshot(&pkg.name, &pkg.version, &hash, pkgbuild_opt) {
+                            eprintln!("Note: Snapshot queuing failed (non-critical): {}", e);
+                        }
                     }
                 }
             }
@@ -211,7 +223,8 @@ pub fn run(cache: &Cache, package: &str, force: bool, dry_run: bool) -> Result<(
         let _ = cache_pkgbuild(cache, package, &pkgbuild);
     }
 
-    // Queue snapshot for batch submission on next cpac update
+    // Queue snapshot for batch submission on next cpac update (trust-db only)
+    #[cfg(feature = "trust-db")]
     if let Some((pkg, ver, hash, pkgbuild_text)) = pending_snapshot {
         let has_pkgbuild = pkgbuild_text.is_some();
         if has_pkgbuild {

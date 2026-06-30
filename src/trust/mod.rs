@@ -222,8 +222,10 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
         total -= 10;
     }
 
-    // --- Signal 7: Security Advisory ---
+    // --- Signal 7: Security Advisory (trust-db only) ---
+    #[cfg(feature = "trust-db")]
     let mut advisory_floor: Option<&str> = None;
+    #[cfg(feature = "trust-db")]
     if let Ok(Some(advisory)) = crate::trust_db::lookup_advisory(&pkg.name) {
         let penalty = crate::trust_db::advisory_penalty(&advisory);
         signals.push(TrustSignal {
@@ -243,9 +245,11 @@ pub fn analyze(cache: &Cache, pkg: &PackageInfo) -> TrustReport {
     let score = total.clamp(0, 100) as u32;
 
     // Compute base recommendation
+    #[allow(unused_mut)]
     let mut recommendation = recommendation(score).to_string();
 
     // Enforce advisory floor: advisory status can only raise the recommendation, never lower it
+    #[cfg(feature = "trust-db")]
     if let Some(floor) = advisory_floor {
         if !floor.is_empty() {
             let floor_rank = recommendation_rank(floor);
@@ -286,6 +290,7 @@ pub fn recommendation(score: u32) -> &'static str {
 }
 
 /// Rank a recommendation label for comparison (higher = worse).
+#[cfg(feature = "trust-db")]
 fn recommendation_rank(rec: &str) -> u8 {
     match rec {
         "Safe" => 0,
@@ -570,7 +575,7 @@ pub fn cache_pkgbuild(cache: &Cache, package: &str, pkgbuild: &str) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backends::{PackageInfo, PackageSource, PackageSource::*};
+    use crate::backends::{PackageInfo, PackageSource::*};
     use crate::cache::{self, Cache};
     use std::sync::OnceLock;
 

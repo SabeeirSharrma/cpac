@@ -148,6 +148,7 @@ fn is_public_email(email: &str) -> bool {
 }
 
 /// Compute SHA-256 hash of content.
+#[cfg(feature = "trust-db")]
 pub fn sha256_hash(content: &str) -> String {
     use sha2::{Sha256, Digest};
     let mut hasher = Sha256::new();

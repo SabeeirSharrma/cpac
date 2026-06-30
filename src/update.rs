@@ -5,8 +5,10 @@ use crate::{
     backends::install::{ensure_sudo, update_databases},
     cache::Cache,
     config,
-    trust_db,
 };
+
+#[cfg(feature = "trust-db")]
+use crate::trust_db;
 
 /// Run the update command.
 pub fn run(cache: &Cache, force_aur: bool) -> Result<()> {
@@ -34,37 +36,41 @@ pub fn run(cache: &Cache, force_aur: bool) -> Result<()> {
 
     println!("Cleared cached package metadata.");
 
-    // Sync trust database (prefer delta, fall back to full)
-    println!("Syncing trust database...");
-    let sync_result = if trust_db::load_local_meta().is_some() {
-        trust_db::sync_delta()
-    } else {
-        trust_db::sync()
-    };
+    // Sync trust database (trust-db only)
+    #[cfg(feature = "trust-db")]
+    {
+        println!("Syncing trust database...");
+        let sync_result = if trust_db::load_local_meta().is_some() {
+            trust_db::sync_delta()
+        } else {
+            trust_db::sync()
+        };
 
-    match sync_result {
-        Ok(result) => println!("{}", result),
-        Err(e) => {
-            eprintln!("Warning: Trust database sync failed: {}", e);
-            eprintln!("Continuing with local cache.");
+        match sync_result {
+            Ok(result) => println!("{}", result),
+            Err(e) => {
+                eprintln!("Warning: Trust database sync failed: {}", e);
+                eprintln!("Continuing with local cache.");
+            }
         }
-    }
 
-    // Flush pending snapshot submissions
-    match trust_db::flush_pending_queue() {
-        Ok(0) => {}
-        Ok(n) => println!("Submitted {} snapshot(s) to trust database.", n),
-        Err(e) => eprintln!("Warning: Failed to submit pending snapshots: {}", e),
-    }
+        // Flush pending snapshot submissions
+        match trust_db::flush_pending_queue() {
+            Ok(0) => {}
+            Ok(n) => println!("Submitted {} snapshot(s) to trust database.", n),
+            Err(e) => eprintln!("Warning: Failed to submit pending snapshots: {}", e),
+        }
 
-    // Check for advisories on installed packages (best-effort, after sync)
-    check_advisory_warnings();
+        // Check for advisories on installed packages (best-effort, after sync)
+        check_advisory_warnings();
+    }
 
     println!("Update complete.");
     Ok(())
 }
 
 /// Scan local advisory cache and warn about affected packages.
+#[cfg(feature = "trust-db")]
 fn check_advisory_warnings() {
     use colored::Colorize;
 
